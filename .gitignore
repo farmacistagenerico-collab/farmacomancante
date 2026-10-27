@@ -1,0 +1,30 @@
+# dipendenze
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# produzione
+/build
+
+# database locale e segreti
+/data/*.db
+/data/*.db-*
+/data/secret.key
+
+# misc
+.DS_Store
+*.pem
+.vscode/
+.idea/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env*.local
+
+# tipi TS incrementali
+tsconfig.tsbuildinfo
