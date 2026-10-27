@@ -151,6 +151,26 @@ npm run build
 npm run start
 ```
 
+### Dati dimostrativi
+
+Per provare subito semaforo, mappa e area amministrativa:
+
+```bash
+FARMACOMANCANTE_ADMIN_EMAIL=admin@farmacomancante.test npm run seed:demo
+```
+
+Lo script è idempotente e crea:
+
+| Account | Email | Password | Note |
+| --- | --- | --- | --- |
+| Amministratore | `admin@farmacomancante.test` | `password123` | ruolo `admin` assegnato via `FARMACOMANCANTE_ADMIN_EMAIL` |
+| Farmacia | `farmacia@farmacomancante.test` | `password123` | "Farmacia Del Porto", Sirmione (BS), già verificata |
+
+Più una disponibilità attiva (ZYPREXA, AIC `033638204` → 🟢), una segnalazione di
+risoluzione (OLANZAPINA ACCORD `041598133` → 🟡), una di mancanza (ABIOCLAV
+`037350016` → 🔴) e una segnalazione libera fuori lista AIFA.
+Le credenziali sono solo per uso locale: non impostare `password123` in produzione.
+
 ## Aggiornamento periodico della lista AIFA
 
 ```bash
