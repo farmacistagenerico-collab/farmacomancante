@@ -1,10 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ensureData, getActiveAvailability, getDrugByAic } from "@/lib/db";
-import { formatDateIT, STOCK_LEVELS } from "@/lib/format";
+import {
+  ensureData,
+  getActiveAvailability,
+  getDrugByAic,
+  getDrugStatusInfo,
+  listActiveReportsByAic,
+  listSources,
+} from "@/lib/db";
+import { formatDateIT, formatDateTimeIT, STOCK_LEVELS } from "@/lib/format";
 import { EquivalentBadge, StockLevelBadge } from "@/components/Badges";
+import { StatusBadge } from "@/components/StatusBadge";
 import { MapWrapper, type MapMarker } from "@/components/MapWrapper";
+import { SignalForm } from "@/components/SignalForm";
+import { ReportsList } from "@/components/ReportsList";
+import { getCurrentPharmacy } from "@/lib/auth";
 
 interface PageProps {
   params: Promise<{ aic: string }>;
@@ -33,7 +44,14 @@ export default async function DrugDetailPage({ params }: PageProps) {
   const drug = getDrugByAic(aic);
   if (!drug) notFound();
 
+  const [pharmacy, statusInfo, reports, sources] = [
+    await getCurrentPharmacy(),
+    getDrugStatusInfo(aic, drug.presumedEndDate),
+    listActiveReportsByAic(aic),
+    listSources(),
+  ];
   const availabilities = getActiveAvailability(aic);
+
   const markers: MapMarker[] = availabilities
     .filter((a) => a.pharmacy.lat !== null && a.pharmacy.lng !== null)
     .map((a) => ({
@@ -43,6 +61,8 @@ export default async function DrugDetailPage({ params }: PageProps) {
       city: a.pharmacy.city,
       address: a.pharmacy.address,
     }));
+
+  const aifaSource = sources.find((s) => s.code === "aifa");
 
   return (
     <div className="container-app py-10">
@@ -61,7 +81,12 @@ export default async function DrugDetailPage({ params }: PageProps) {
             {drug.atcCode ? ` · Codice ATC ${drug.atcCode}` : ""}
           </p>
         </div>
-        <EquivalentBadge hasEquivalent={drug.hasEquivalent} />
+        <div className="text-right">
+          <StatusBadge status={statusInfo.status} withDescription />
+          <div className="mt-2">
+            <EquivalentBadge hasEquivalent={drug.hasEquivalent} />
+          </div>
+        </div>
       </div>
 
       {/* Scheda informativa AIFA */}
@@ -96,6 +121,52 @@ export default async function DrugDetailPage({ params }: PageProps) {
             </p>
             <p className="mt-1.5 text-sm text-slate-800">{drug.aifaNote}</p>
           </div>
+        )}
+      </section>
+
+      {/* Fonti incrociate */}
+      <section className="card mt-6 p-6">
+        <h2 className="text-lg font-semibold">Fonti incrociate</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Il semaforo combina i segnali delle fonti seguenti, aggiornati a momenti diversi.
+        </p>
+        <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+          {sources.map((s) => {
+            const counts: Record<string, string> = {
+              aifa: "lista ufficiale di riferimento",
+              comunita: `${statusInfo.mancanteCount + statusInfo.risoluzioneCount} segnalazione/i attiva/e per questo farmaco`,
+              "disponibilita-farmacie": `${statusInfo.availabilityCount} disponibilità attiva/e`,
+              "mdm-farmacie": "validazione anagrafica delle farmacie",
+              "mdm-distributori": "futuro incrocio con i magazzini grossisti",
+            };
+            return (
+              <li
+                key={s.code}
+                className="flex items-start gap-3 rounded-lg border border-slate-200 p-3.5"
+              >
+                <span
+                  className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                    s.lastSyncAt ? "bg-emerald-500" : "bg-slate-300"
+                  }`}
+                  aria-hidden="true"
+                />
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{s.name}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{counts[s.code] ?? s.description}</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {s.lastSyncAt
+                      ? `ultimo aggiornamento: ${formatDateTimeIT(s.lastSyncAt)} (${s.lastStatus ?? ""})`
+                      : "non ancora sincronizzata"}
+                  </p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        {statusInfo.reasons.length > 0 && (
+          <p className="mt-4 text-xs text-slate-500">
+            Perché questo semaforo: {statusInfo.reasons.join("; ")}.
+          </p>
         )}
       </section>
 
@@ -187,6 +258,38 @@ export default async function DrugDetailPage({ params }: PageProps) {
             </div>
           </>
         )}
+      </section>
+
+      {/* Segnalazione comunitaria della mancanza */}
+      <section id="segnala" className="mt-12 scroll-mt-20">
+        <h2 className="text-xl font-bold">Segnala lo stato di questo farmaco</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Farmacie, medici e cittadini possono segnalare se il farmaco è ancora mancante
+          o se la carenza è in corso di risoluzione. Le segnalazioni alimentano il semaforo.
+        </p>
+        <div className="mt-4">
+          <SignalForm
+            mode="drug"
+            aic={drug.aic}
+            drugName={drug.name}
+            pharmacy={
+              pharmacy
+                ? { id: pharmacy.id, name: pharmacy.name, city: pharmacy.city }
+                : null
+            }
+          />
+        </div>
+
+        <h3 className="mt-8 text-lg font-semibold">
+          Segnalazioni recenti{" "}
+          <span className="text-sm font-normal text-slate-500">({reports.length})</span>
+        </h3>
+        <div className="mt-3">
+          <ReportsList
+            reports={reports}
+            emptyText="Nessuna segnalazione comunitaria per questo farmaco: puoi inviare la prima."
+          />
+        </div>
       </section>
     </div>
   );

@@ -30,7 +30,7 @@ export default async function HomePage() {
             <div className="mt-8">
               <SearchForm large />
             </div>
-            <div className="mt-10 grid grid-cols-3 gap-4 text-center">
+            <div className="mt-10 grid grid-cols-2 gap-4 text-center sm:grid-cols-4">
               <div>
                 <p className="text-2xl font-bold text-brand-700 sm:text-3xl">
                   {stats.drugCount.toLocaleString("it-IT")}
@@ -42,6 +42,12 @@ export default async function HomePage() {
                   {stats.activeAvailabilityCount.toLocaleString("it-IT")}
                 </p>
                 <p className="mt-1 text-xs text-slate-500 sm:text-sm">disponibilità attive</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-brand-700 sm:text-3xl">
+                  {stats.activeReportCount.toLocaleString("it-IT")}
+                </p>
+                <p className="mt-1 text-xs text-slate-500 sm:text-sm">segnalazioni della comunità</p>
               </div>
               <div>
                 <p className="text-2xl font-bold text-brand-700 sm:text-3xl">

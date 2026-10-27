@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentPharmacy } from "@/lib/auth";
-import { listMyAvailability } from "@/lib/db";
+import { listMyAvailability, listReportsByPharmacy } from "@/lib/db";
 import { AvailabilityManager } from "@/components/AvailabilityManager";
+import { ReportsList } from "@/components/ReportsList";
 
 export const metadata: Metadata = { title: "Dashboard farmacia" };
 
@@ -12,6 +13,7 @@ export default async function DashboardPage() {
   if (!pharmacy) redirect("/area-farmacie/accedi");
 
   const items = listMyAvailability(pharmacy.id);
+  const reports = listReportsByPharmacy(pharmacy.id);
 
   return (
     <div className="container-app py-10">
@@ -24,14 +26,33 @@ export default async function DashboardPage() {
               .join(", ") || "Dati sede non completi"}
           </p>
         </div>
-        <Link href="/farmaci" className="btn-secondary text-xs">
-          Consulta la lista pubblica
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/segnalazioni" className="btn-secondary text-xs">
+            Segnala un mancante
+          </Link>
+          <Link href="/farmaci" className="btn-secondary text-xs">
+            Lista pubblica
+          </Link>
+        </div>
       </div>
 
       <div className="mt-8">
         <AvailabilityManager items={items} />
       </div>
+
+      <section className="mt-12">
+        <h2 className="text-lg font-semibold">Le mie segnalazioni di mancanza</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Stato dei farmaci che avete segnalato come mancanti o in corso di risoluzione.
+        </p>
+        <div className="mt-4">
+          <ReportsList
+            reports={reports}
+            canResolve
+            emptyText="Non avete ancora inviato segnalazioni di mancanza: usate il modulo sulla scheda di un farmaco o la pagina Segnalazioni."
+          />
+        </div>
+      </section>
     </div>
   );
 }

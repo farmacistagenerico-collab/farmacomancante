@@ -50,6 +50,28 @@ export function clampText(value: unknown, maxLength: number): string | null {
   return trimmed.length > maxLength ? trimmed.slice(0, maxLength) : trimmed || null;
 }
 
+const REPORTER_ROLES = ["farmacia", "medico", "cittadino"] as const;
+const SHORTAGE_SIGNALS = ["mancante", "risoluzione"] as const;
+const REPORT_CHANNELS = ["farmacia", "grossista"] as const;
+
+export function validateReporterRole(value: unknown): string | null {
+  return typeof value === "string" && (REPORTER_ROLES as readonly string[]).includes(value)
+    ? null
+    : "Ruolo non valido";
+}
+
+export function validateShortageSignal(value: unknown): string | null {
+  return typeof value === "string" && (SHORTAGE_SIGNALS as readonly string[]).includes(value)
+    ? null
+    : "Seleziona uno stato valido";
+}
+
+export function validateReportChannel(value: unknown): string | null {
+  return typeof value === "string" && (REPORT_CHANNELS as readonly string[]).includes(value)
+    ? null
+    : "Canale non valido";
+}
+
 export function jsonError(status: number, message: string, fields?: FieldErrors) {
   return Response.json({ ok: false, message, fields }, { status });
 }

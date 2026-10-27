@@ -18,7 +18,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const DB_PATH = path.join(ROOT, "data", "farmacomancante.db");
 const DEFAULT_CSV = path.join(ROOT, "data", "raw", "elenco_medicinali_carenti.csv");
-const csvPath = process.argv[2] ? path.resolve(process.argv[2]) : DEFAULT_CSV;
+const AIFA_CSV_URL =
+  "https://www.aifa.gov.it/documents/20142/847339/elenco_medicinali_carenti.csv";
+const useRemote = process.argv.includes("--remote");
+const csvPath = process.argv[2] && !process.argv[2].startsWith("--")
+  ? path.resolve(process.argv[2])
+  : DEFAULT_CSV;
 
 function parseCsv(text, delimiter = ";") {
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
@@ -77,13 +82,37 @@ const normEquivalent = (v) => {
   return null;
 };
 
-if (!fs.existsSync(csvPath)) {
-  console.error(`File non trovato: ${csvPath}`);
-  process.exit(1);
-}
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
-const csvText = new TextDecoder("windows-1252").decode(fs.readFileSync(csvPath));
+let csvText;
+let sourceLabel = path.basename(csvPath);
+let syncStatus = "ok-locale";
+if (useRemote) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    const res = await fetch(AIFA_CSV_URL, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    csvText = new TextDecoder("windows-1252").decode(
+      Buffer.from(await res.arrayBuffer())
+    );
+    sourceLabel = "aifa.gov.it (remoto)";
+    syncStatus = "ok-remoto";
+    console.log("✓ Lista scaricata da AIFA");
+  } catch (err) {
+    console.warn(`⚠ Download remoto non riuscito (${err.message}), uso il CSV locale`);
+    csvText = new TextDecoder("windows-1252").decode(fs.readFileSync(csvPath));
+    sourceLabel = `${path.basename(csvPath)} (fallback locale)`;
+    syncStatus = "fallback-locale";
+  }
+} else {
+  if (!fs.existsSync(csvPath)) {
+    console.error(`File non trovato: ${csvPath}`);
+    process.exit(1);
+  }
+  csvText = new TextDecoder("windows-1252").decode(fs.readFileSync(csvPath));
+}
 const rows = parseCsv(csvText);
 
 let listDate = null;
@@ -156,7 +185,13 @@ try {
   }
   db.prepare(
     "INSERT INTO import_batch (source_file, list_date, imported_at, row_count) VALUES (?, ?, ?, ?)"
-  ).run(path.basename(csvPath), listDate, now, inserted + updated);
+  ).run(sourceLabel, listDate, now, inserted + updated);
+  db.prepare(
+    `INSERT INTO external_source (code, name, description, kind, last_sync_at, last_status)
+     VALUES ('aifa', 'AIFA — Lista farmaci temporaneamente carenti', NULL, 'external', ?, ?)
+     ON CONFLICT(code) DO UPDATE SET last_sync_at = excluded.last_sync_at,
+       last_status = excluded.last_status`
+  ).run(now, syncStatus);
   db.exec("COMMIT");
 } catch (err) {
   db.exec("ROLLBACK");
@@ -164,7 +199,7 @@ try {
 }
 
 console.log("✓ Importazione completata");
-console.log(`  file:        ${path.basename(csvPath)}`);
+console.log(`  file:        ${sourceLabel}`);
 console.log(`  lista del:   ${listDate ?? "n/d"}`);
 console.log(`  inseriti:    ${inserted}`);
 console.log(`  aggiornati:  ${updated}`);

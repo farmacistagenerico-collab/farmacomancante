@@ -38,6 +38,12 @@ export async function Header() {
             Lista farmaci carenti
           </Link>
           <Link
+            href="/segnalazioni"
+            className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+          >
+            Segnalazioni
+          </Link>
+          <Link
             href="/area-farmacie"
             className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
           >

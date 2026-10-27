@@ -8,6 +8,8 @@
     "build": "next build",
     "start": "next start",
     "import": "node scripts/import-csv.mjs",
+    "import:remote": "node scripts/import-csv.mjs --remote",
+    "import:farmacie-mdm": "node scripts/import-farmacie-mdm.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

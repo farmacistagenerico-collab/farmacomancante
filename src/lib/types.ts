@@ -69,3 +69,53 @@ export interface ImportSummary {
   inserted: number;
   updated: number;
 }
+
+// ---------- semaforo carenze ----------------------------------------------
+
+export type DrugStatus = "carenza" | "risoluzione" | "disponibile";
+
+export type ReporterRole = "farmacia" | "medico" | "cittadino";
+export type ReportChannel = "farmacia" | "grossista";
+export type ShortageSignal = "mancante" | "risoluzione";
+export type ShortageReportStatus = "attivo" | "risolto";
+
+export interface ShortageReport {
+  id: number;
+  pharmacyId: number | null;
+  reporterRole: ReporterRole;
+  reporterName: string | null;
+  aic: string | null;
+  drugName: string;
+  activeIngredient: string | null;
+  city: string | null;
+  province: string | null;
+  channel: ReportChannel;
+  signal: ShortageSignal;
+  note: string | null;
+  status: ShortageReportStatus;
+  reviewed: number;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ShortageReportView extends ShortageReport {
+  pharmacyName: string | null;
+}
+
+export interface DrugStatusInfo {
+  status: DrugStatus;
+  availabilityCount: number;
+  mancanteCount: number;
+  risoluzioneCount: number;
+  reasons: string[];
+}
+
+export interface ExternalSource {
+  code: string;
+  name: string;
+  description: string | null;
+  kind: string;
+  lastSyncAt: string | null;
+  lastStatus: string | null;
+}

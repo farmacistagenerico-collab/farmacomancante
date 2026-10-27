@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { cleanCell, normalizeSearch, parseCsv, parseDateIT } from "./csv";
-import { recordImportBatch } from "./db";
+import { markSourceSynced, recordImportBatch } from "./db";
+import { fetchAifaCsv } from "./sources/aifa";
 import type { ImportSummary } from "./types";
 
 interface CsvDrug {
@@ -95,13 +96,8 @@ export function parseAifaCsv(csvText: string): {
   return { listDate, drugs };
 }
 
-export async function importCsv(
-  db: DatabaseSync,
-  csvPath: string
-): Promise<ImportSummary> {
-  const buffer = fs.readFileSync(csvPath);
-  // Il file AIFA è codificato Windows-1252
-  const csvText = new TextDecoder("windows-1252").decode(buffer);
+/** Nucleo condiviso: upsert di un CSV AIFA già decodificato */
+function applyImport(db: DatabaseSync, csvText: string, sourceFile: string): ImportSummary {
   const { listDate, drugs } = parseAifaCsv(csvText);
 
   const existing = new Set(
@@ -158,7 +154,7 @@ export async function importCsv(
       if (existing.has(d.aic)) updated++;
       else inserted++;
     }
-    recordImportBatch(path.basename(csvPath), listDate, drugs.length);
+    recordImportBatch(sourceFile, listDate, drugs.length);
     db.exec("COMMIT");
   } catch (err) {
     db.exec("ROLLBACK");
@@ -166,11 +162,35 @@ export async function importCsv(
   }
 
   return {
-    sourceFile: path.basename(csvPath),
+    sourceFile,
     listDate,
     importedAt: new Date().toISOString(),
     totalRows: drugs.length,
     inserted,
     updated,
   };
+}
+
+/** Import da file CSV locale (formato AIFA, Windows-1252) */
+export async function importCsv(
+  db: DatabaseSync,
+  csvPath: string
+): Promise<ImportSummary> {
+  const csvText = new TextDecoder("windows-1252").decode(fs.readFileSync(csvPath));
+  const summary = applyImport(db, csvText, path.basename(csvPath));
+  markSourceSynced("aifa", "ok-locale");
+  return summary;
+}
+
+/**
+ * Import diretto dalla fonte AIFA online, con fallback automatico sul CSV locale.
+ * Usabile da un job schedulato o da CLI (`npm run import:remote`).
+ */
+export async function importFromAifaRemote(db: DatabaseSync): Promise<ImportSummary> {
+  const { csvText, source } = await fetchAifaCsv();
+  const sourceFile =
+    source === "remote" ? "aifa.gov.it (remoto)" : "elenco_medicinali_carenti.csv (fallback locale)";
+  const summary = applyImport(db, csvText, sourceFile);
+  markSourceSynced("aifa", source === "remote" ? "ok-remoto" : "fallback-locale");
+  return summary;
 }

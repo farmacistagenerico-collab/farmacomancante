@@ -8,6 +8,14 @@ export function formatDateIT(iso: string | null | undefined): string {
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
+/** ISO datetime -> dd/mm/yyyy ore:min */
+export function formatDateTimeIT(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return formatDateIT(iso);
+  return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
+}
+
 export function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -44,3 +52,24 @@ export const STOCK_LEVEL_ORDER: StockLevel[] = [
   "scarsa",
   "ultimi_pezzi",
 ];
+
+// ---------- segnalazioni di mancanza --------------------------------------
+
+/** Validità di default di una segnalazione comunitaria (giorni) */
+export const REPORT_TTL_DAYS = 14;
+
+export const REPORTER_ROLE_LABELS: Record<string, string> = {
+  farmacia: "Farmacia",
+  medico: "Medico",
+  cittadino: "Cittadino",
+};
+
+export const REPORT_CHANNEL_LABELS: Record<string, string> = {
+  farmacia: "Mancante in farmacia",
+  grossista: "Mancante dal grossista",
+};
+
+export const SHORTAGE_SIGNAL_LABELS: Record<string, string> = {
+  mancante: "Mancante",
+  risoluzione: "In corso di risoluzione",
+};

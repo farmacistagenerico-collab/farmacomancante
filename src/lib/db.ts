@@ -6,11 +6,18 @@ import type {
   AvailabilityView,
   Drug,
   DrugListItem,
+  DrugStatus,
+  DrugStatusInfo,
+  ExternalSource,
   Pharmacy,
+  ShortageReport,
+  ShortageReportView,
   StockLevel,
 } from "./types";
 import { normalizeSearch } from "./csv";
 import { todayISO } from "./format";
+import { computeDrugStatus } from "./status";
+import { SOURCE_REGISTRY } from "./sources/registry";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 export const DB_PATH = path.join(DATA_DIR, "farmacomancante.db");
@@ -29,9 +36,52 @@ export function getDb(): DatabaseSync {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const db = new DatabaseSync(DB_PATH);
     createSchema(db);
+    seedSources(db);
     g.__farmacomancanteDb = db;
   }
   return g.__farmacomancanteDb;
+}
+
+/** Popola il registro delle fonti al primo avvio, senza sovrascrivere lo stato di sync. */
+function seedSources(db: DatabaseSync): void {
+  const stmt = db.prepare(
+    `INSERT INTO external_source (code, name, description, kind)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(code) DO UPDATE SET
+       name = excluded.name,
+       description = excluded.description,
+       kind = excluded.kind`
+  );
+  for (const s of SOURCE_REGISTRY) {
+    stmt.run(s.code, s.name, s.description, s.kind);
+  }
+}
+
+export function markSourceSynced(code: string, status = "ok"): void {
+  run(
+    "UPDATE external_source SET last_sync_at = ?, last_status = ? WHERE code = ?",
+    new Date().toISOString(),
+    status,
+    code
+  );
+}
+
+export function listSources(): ExternalSource[] {
+  return all<{
+    code: string;
+    name: string;
+    description: string | null;
+    kind: string;
+    last_sync_at: string | null;
+    last_status: string | null;
+  }>("SELECT * FROM external_source ORDER BY kind, name").map((r) => ({
+    code: r.code,
+    name: r.name,
+    description: r.description,
+    kind: r.kind,
+    lastSyncAt: r.last_sync_at,
+    lastStatus: r.last_status,
+  }));
 }
 
 // Helper tipati: i tipi di node:sqlite restituiscono Record generici,
@@ -98,12 +148,22 @@ function mapDrug(row: DrugRow): Drug {
 export interface SearchParams {
   q?: string;
   equivalent?: "si" | "no";
+  status?: DrugStatus;
   page?: number;
   pageSize?: number;
 }
 
+const AVAIL_EXISTS =
+  "EXISTS (SELECT 1 FROM availability av WHERE av.aic = d.aic AND av.expires_at >= ?)";
+const RISOLUZIONE_EXISTS =
+  "EXISTS (SELECT 1 FROM shortage_report sr WHERE sr.aic = d.aic AND sr.status = 'attivo' AND sr.expires_at >= ? AND sr.signal = 'risoluzione')";
+
 export function searchDrugs(params: SearchParams): {
-  items: DrugListItem[];
+  items: (DrugListItem & {
+    mancanteCount: number;
+    risoluzioneCount: number;
+    status: DrugStatus;
+  })[];
   total: number;
   page: number;
   pageSize: number;
@@ -125,21 +185,47 @@ export function searchDrugs(params: SearchParams): {
   if (params.equivalent === "si") where.push("has_equivalent = 1");
   if (params.equivalent === "no") where.push("has_equivalent = 0");
 
+  // Filtro a semaforo: le tre condizioni sono mutuamente esclusive
+  if (params.status === "disponibile") {
+    where.push(AVAIL_EXISTS);
+    bindings.push(today);
+  } else if (params.status === "risoluzione") {
+    where.push(`NOT ${AVAIL_EXISTS}`);
+    bindings.push(today);
+    where.push(`(${RISOLUZIONE_EXISTS} OR (d.presumed_end_date IS NOT NULL AND d.presumed_end_date <= ?))`);
+    bindings.push(today, today);
+  } else if (params.status === "carenza") {
+    where.push(`NOT ${AVAIL_EXISTS}`);
+    bindings.push(today);
+    where.push(`NOT ${RISOLUZIONE_EXISTS}`);
+    bindings.push(today);
+    where.push("(d.presumed_end_date IS NULL OR d.presumed_end_date > ?)");
+    bindings.push(today);
+  }
+
   const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
 
   const total = one<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM drug ${whereSql}`,
+    `SELECT COUNT(*) AS n FROM drug d ${whereSql}`,
     ...bindings
   )!.n;
 
-  const rows = all<DrugRow & { active_count: number }>(
+  const rows = all<
+    DrugRow & { active_count: number; mancante_count: number; risoluzione_count: number }
+  >(
     `SELECT d.*,
       (SELECT COUNT(*) FROM availability av
-         WHERE av.aic = d.aic AND av.expires_at >= ?) AS active_count
+         WHERE av.aic = d.aic AND av.expires_at >= ?) AS active_count,
+      (SELECT COUNT(*) FROM shortage_report sr
+         WHERE sr.aic = d.aic AND sr.status = 'attivo' AND sr.expires_at >= ? AND sr.signal = 'mancante') AS mancante_count,
+      (SELECT COUNT(*) FROM shortage_report sr
+         WHERE sr.aic = d.aic AND sr.status = 'attivo' AND sr.expires_at >= ? AND sr.signal = 'risoluzione') AS risoluzione_count
      FROM drug d
      ${whereSql}
      ORDER BY d.name COLLATE NOCASE ASC
      LIMIT ? OFFSET ?`,
+    today,
+    today,
     today,
     ...bindings,
     pageSize,
@@ -147,10 +233,70 @@ export function searchDrugs(params: SearchParams): {
   );
 
   return {
-    items: rows.map((r) => ({ ...mapDrug(r), activeCount: r.active_count })),
+    items: rows.map((r) => {
+      const base = { ...mapDrug(r), activeCount: r.active_count };
+      const status = computeDrugStatus({
+        availabilityCount: r.active_count,
+        mancanteCount: r.mancante_count,
+        risoluzioneCount: r.risoluzione_count,
+        presumedEndDate: r.presumed_end_date,
+      });
+      return {
+        ...base,
+        mancanteCount: r.mancante_count,
+        risoluzioneCount: r.risoluzione_count,
+        status,
+      };
+    }),
     total,
     page,
     pageSize,
+  };
+}
+
+/** Semaforo e contatori dei segnali per un singolo farmaco */
+export function getDrugStatusInfo(aic: string, presumedEndDate: string | null): DrugStatusInfo {
+  const today = todayISO();
+  const row = one<{
+    availability_count: number;
+    mancante_count: number;
+    risoluzione_count: number;
+  }>(
+    `SELECT
+      (SELECT COUNT(*) FROM availability av WHERE av.aic = ? AND av.expires_at >= ?) AS availability_count,
+      (SELECT COUNT(*) FROM shortage_report sr WHERE sr.aic = ? AND sr.status = 'attivo' AND sr.expires_at >= ? AND sr.signal = 'mancante') AS mancante_count,
+      (SELECT COUNT(*) FROM shortage_report sr WHERE sr.aic = ? AND sr.status = 'attivo' AND sr.expires_at >= ? AND sr.signal = 'risoluzione') AS risoluzione_count`,
+    aic,
+    today,
+    aic,
+    today,
+    aic,
+    today
+  )!;
+
+  const status = computeDrugStatus({
+    availabilityCount: row.availability_count,
+    mancanteCount: row.mancante_count,
+    risoluzioneCount: row.risoluzione_count,
+    presumedEndDate,
+  });
+
+  const reasons: string[] = [];
+  if (row.availability_count > 0)
+    reasons.push(`${row.availability_count} disponibilità attiva/e dalle farmacie`);
+  if (row.risoluzione_count > 0)
+    reasons.push(`${row.risoluzione_count} segnalazione/i di risoluzione in corso`);
+  if (row.mancante_count > 0)
+    reasons.push(`${row.mancante_count} segnalazione/i di mancanza`);
+  if (presumedEndDate && presumedEndDate <= today)
+    reasons.push("data di fine presunta AIFA già trascorsa");
+
+  return {
+    status,
+    availabilityCount: row.availability_count,
+    mancanteCount: row.mancante_count,
+    risoluzioneCount: row.risoluzione_count,
+    reasons,
   };
 }
 
@@ -181,6 +327,7 @@ export function getStats(): {
   drugCount: number;
   activeAvailabilityCount: number;
   pharmacyCount: number;
+  activeReportCount: number;
 } {
   const today = todayISO();
   return {
@@ -188,6 +335,10 @@ export function getStats(): {
     pharmacyCount: one<{ n: number }>("SELECT COUNT(*) AS n FROM pharmacy")!.n,
     activeAvailabilityCount: one<{ n: number }>(
       "SELECT COUNT(*) AS n FROM availability WHERE expires_at >= ?",
+      today
+    )!.n,
+    activeReportCount: one<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM shortage_report WHERE status = 'attivo' AND expires_at >= ?",
       today
     )!.n,
   };
@@ -436,4 +587,183 @@ export function recordImportBatch(
     new Date().toISOString(),
     rowCount
   );
+}
+
+// ---------- segnalazioni comunitarie di mancanza --------------------------
+
+interface ShortageReportRow {
+  id: number;
+  pharmacy_id: number | null;
+  reporter_role: string;
+  reporter_name: string | null;
+  aic: string | null;
+  drug_name: string;
+  active_ingredient: string | null;
+  city: string | null;
+  province: string | null;
+  channel: string;
+  signal: string;
+  note: string | null;
+  status: string;
+  reviewed: number;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+  pharmacy_name: string | null;
+}
+
+function mapShortageReport(row: ShortageReportRow): ShortageReportView {
+  return {
+    id: row.id,
+    pharmacyId: row.pharmacy_id,
+    reporterRole: row.reporter_role as ShortageReport["reporterRole"],
+    reporterName: row.reporter_name,
+    aic: row.aic,
+    drugName: row.drug_name,
+    activeIngredient: row.active_ingredient,
+    city: row.city,
+    province: row.province,
+    channel: row.channel as ShortageReport["channel"],
+    signal: row.signal as ShortageReport["signal"],
+    note: row.note,
+    status: row.status as ShortageReport["status"],
+    reviewed: row.reviewed,
+    expiresAt: row.expires_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    pharmacyName: row.pharmacy_name,
+  };
+}
+
+export interface NewShortageReportInput {
+  pharmacyId?: number | null;
+  reporterRole: ShortageReport["reporterRole"];
+  reporterName?: string | null;
+  aic?: string | null;
+  drugName: string;
+  activeIngredient?: string | null;
+  city?: string | null;
+  province?: string | null;
+  channel: ShortageReport["channel"];
+  signal: ShortageReport["signal"];
+  note?: string | null;
+  expiresAt: string;
+}
+
+export function createShortageReport(input: NewShortageReportInput): ShortageReport {
+  const now = new Date().toISOString();
+  const result = run(
+    `INSERT INTO shortage_report
+       (pharmacy_id, reporter_role, reporter_name, aic, drug_name, active_ingredient,
+        city, province, channel, signal, note, status, reviewed, expires_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'attivo', 0, ?, ?, ?)`,
+    input.pharmacyId ?? null,
+    input.reporterRole,
+    input.reporterName ?? null,
+    input.aic ?? null,
+    input.drugName,
+    input.activeIngredient ?? null,
+    input.city ?? null,
+    input.province ?? null,
+    input.channel,
+    input.signal,
+    input.note ?? null,
+    input.expiresAt,
+    now,
+    now
+  );
+  const row = one<ShortageReportRow>(
+    `SELECT sr.*, p.name AS pharmacy_name
+     FROM shortage_report sr LEFT JOIN pharmacy p ON p.id = sr.pharmacy_id
+     WHERE sr.id = ?`,
+    Number(result.lastInsertRowid)
+  )!;
+  return mapShortageReport(row);
+}
+
+const REPORT_SELECT = `
+  SELECT sr.*, p.name AS pharmacy_name
+  FROM shortage_report sr
+  LEFT JOIN pharmacy p ON p.id = sr.pharmacy_id`;
+
+export function listActiveReportsByAic(aic: string): ShortageReportView[] {
+  const today = todayISO();
+  return all<ShortageReportRow>(
+    `${REPORT_SELECT}
+     WHERE sr.aic = ? AND sr.status = 'attivo' AND sr.expires_at >= ?
+     ORDER BY sr.created_at DESC`,
+    aic,
+    today
+  ).map(mapShortageReport);
+}
+
+export function listReportsByPharmacy(pharmacyId: number): ShortageReportView[] {
+  return all<ShortageReportRow>(
+    `${REPORT_SELECT} WHERE sr.pharmacy_id = ? ORDER BY sr.created_at DESC`,
+    pharmacyId
+  ).map(mapShortageReport);
+}
+
+export function resolveShortageReport(id: number, pharmacyId: number): boolean {
+  const result = run(
+    "UPDATE shortage_report SET status = 'risolto', updated_at = ? WHERE id = ? AND pharmacy_id = ?",
+    new Date().toISOString(),
+    id,
+    pharmacyId
+  );
+  return result.changes > 0;
+}
+
+export function listCommunityReports(params: {
+  q?: string;
+  page?: number;
+  pageSize?: number;
+}): { items: ShortageReportView[]; total: number; page: number; pageSize: number } {
+  const today = todayISO();
+  const page = Math.max(1, params.page ?? 1);
+  const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 20));
+  const where = ["sr.status = 'attivo'", "sr.expires_at >= ?"];
+  const bindings: SQLInputValue[] = [today];
+
+  const term = normalizeSearch(params.q ?? "");
+  if (term) {
+    for (const token of term.split(" ").filter(Boolean)) {
+      where.push("(UPPER(sr.drug_name) LIKE ? OR UPPER(COALESCE(sr.active_ingredient, '')) LIKE ? OR sr.aic LIKE ?)");
+      bindings.push(`%${token}%`, `%${token}%`, `%${token}%`);
+    }
+  }
+  const whereSql = `WHERE ${where.join(" AND ")}`;
+  const total = one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM shortage_report sr ${whereSql}`,
+    ...bindings
+  )!.n;
+  const rows = all<ShortageReportRow>(
+    `${REPORT_SELECT} ${whereSql}
+     ORDER BY sr.created_at DESC
+     LIMIT ? OFFSET ?`,
+    ...bindings,
+    pageSize,
+    (page - 1) * pageSize
+  );
+  return { items: rows.map(mapShortageReport), total, page, pageSize };
+}
+
+/** Segnalazioni attive corrispondenti a un termine, anche per farmaci non in lista AIFA */
+export function searchCommunityReports(q: string, limit = 5): ShortageReportView[] {
+  const today = todayISO();
+  const term = normalizeSearch(q);
+  if (!term) return [];
+  const tokens = term.split(" ").filter(Boolean);
+  const where = ["sr.status = 'attivo'", "sr.expires_at >= ?"];
+  const bindings: SQLInputValue[] = [today];
+  for (const token of tokens) {
+    where.push("(UPPER(sr.drug_name) LIKE ? OR UPPER(COALESCE(sr.active_ingredient, '')) LIKE ?)");
+    bindings.push(`%${token}%`, `%${token}%`);
+  }
+  return all<ShortageReportRow>(
+    `${REPORT_SELECT} WHERE ${where.join(" AND ")}
+     ORDER BY sr.created_at DESC LIMIT ?`,
+    ...bindings,
+    limit
+  ).map(mapShortageReport);
 }
