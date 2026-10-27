@@ -36,6 +36,8 @@ export interface Pharmacy {
   phone: string | null;
   lat: number | null;
   lng: number | null;
+  role: "farmacia" | "admin";
+  verified: number;
   createdAt: string;
 }
 
@@ -56,7 +58,16 @@ export interface Availability {
 export interface AvailabilityView extends Availability {
   pharmacy: Pick<
     Pharmacy,
-    "id" | "name" | "address" | "city" | "province" | "cap" | "phone" | "lat" | "lng"
+    | "id"
+    | "name"
+    | "address"
+    | "city"
+    | "province"
+    | "cap"
+    | "phone"
+    | "lat"
+    | "lng"
+    | "verified"
   >;
   drugName: string;
 }
@@ -94,6 +105,7 @@ export interface ShortageReport {
   note: string | null;
   status: ShortageReportStatus;
   reviewed: number;
+  hidden: number;
   expiresAt: string;
   createdAt: string;
   updatedAt: string;

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getCurrentPharmacy } from "@/lib/auth";
+import { getCurrentPharmacy, isAdmin } from "@/lib/auth";
 import { LogoutButton } from "./LogoutButton";
 
 export async function Header() {
@@ -54,6 +54,11 @@ export async function Header() {
         <div className="flex items-center gap-2">
           {pharmacy ? (
             <>
+              {isAdmin(pharmacy) && (
+                <Link href="/admin" className="btn-secondary hidden sm:inline-flex">
+                  Admin
+                </Link>
+              )}
               <Link href="/area-farmacie/dashboard" className="btn-secondary hidden sm:inline-flex">
                 Dashboard
               </Link>

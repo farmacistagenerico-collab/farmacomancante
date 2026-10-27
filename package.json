@@ -10,7 +10,8 @@
     "import": "node scripts/import-csv.mjs",
     "import:remote": "node scripts/import-csv.mjs --remote",
     "import:farmacie-mdm": "node scripts/import-farmacie-mdm.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
@@ -25,6 +26,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "tailwindcss": "^4.1.4",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.0"
   }
 }

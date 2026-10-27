@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS pharmacy (
   phone TEXT,
   lat REAL,
   lng REAL,
+  role TEXT NOT NULL DEFAULT 'farmacia', -- farmacia | admin
+  verified INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 
@@ -95,6 +97,7 @@ CREATE TABLE IF NOT EXISTS shortage_report (
   note TEXT,
   status TEXT NOT NULL DEFAULT 'attivo',  -- attivo | risolto
   reviewed INTEGER NOT NULL DEFAULT 0,
+  hidden INTEGER NOT NULL DEFAULT 0,
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

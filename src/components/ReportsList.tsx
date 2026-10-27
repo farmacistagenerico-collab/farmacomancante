@@ -33,6 +33,7 @@ export function ReportsList({
                 <SignalBadge signal={r.signal} />
                 <span className="badge-gray">{REPORT_CHANNEL_LABELS[r.channel]}</span>
                 <span className="badge-gray">{REPORTER_ROLE_LABELS[r.reporterRole]}</span>
+                {r.hidden === 1 && <span className="badge bg-slate-700 text-white">nascosta dalla moderazione</span>}
               </div>
               <p className="mt-2 font-semibold text-slate-900">
                 {r.aic ? (

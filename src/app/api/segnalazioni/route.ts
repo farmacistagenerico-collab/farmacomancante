@@ -14,6 +14,7 @@ import {
   validateShortageSignal,
 } from "@/lib/validation";
 import { isoPlusDays, REPORT_TTL_DAYS } from "@/lib/format";
+import { getClientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import type { ReportChannel, ReporterRole, ShortageSignal } from "@/lib/types";
 
 interface ReportBody {
@@ -42,6 +43,12 @@ export async function POST(request: Request) {
   // Honeypot: rifiuta silenziosamente i bot che compilano tutto
   if (body.website) {
     return jsonError(400, "Richiesta non valida");
+  }
+
+  // Massimo 15 segnalazioni/ora per IP: protegge da flood e spam
+  const limit = rateLimit(`segnalazioni:${getClientIp(request)}`, 15, 60 * 60 * 1000);
+  if (!limit.ok) {
+    return tooManyRequests(limit.retryAfterSeconds ?? 60);
   }
 
   const store = await cookies();

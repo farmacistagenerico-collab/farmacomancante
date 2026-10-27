@@ -21,6 +21,21 @@ function getSecret(): string {
   return fs.readFileSync(SECRET_PATH, "utf8").trim();
 }
 
+/** Segreto condiviso per gli endpoint di manutenzione (es. cron). */
+export function getServerSecret(): string {
+  return getSecret();
+}
+
+/** Verifica l'header Authorization: Bearer dei job schedulati. */
+export function verifyCronAuthorization(header: string | null): boolean {
+  const expected = process.env.FARMACOMANCANTE_CRON_SECRET ?? getSecret();
+  if (!header || !header.startsWith("Bearer ")) return false;
+  const token = header.slice("Bearer ".length).trim();
+  const a = Buffer.from(token);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 // ---------- password -------------------------------------------------------
 
 export function hashPassword(password: string): string {
@@ -85,4 +100,15 @@ export async function getCurrentPharmacy(): Promise<Pharmacy | null> {
   // Inizializza il DB anche quando chiamato prima dell'ensureData generale
   getDb();
   return getPharmacyById(pharmacyId);
+}
+
+/**
+ * Amministratore: ruolo nel database oppure email indicata nella variabile
+ * d'ambiente FARMACOMANCANTE_ADMIN_EMAIL (utile per il primo amministratore).
+ */
+export function isAdmin(pharmacy: Pharmacy | null): boolean {
+  if (!pharmacy) return false;
+  if (pharmacy.role === "admin") return true;
+  const adminEmail = process.env.FARMACOMANCANTE_ADMIN_EMAIL?.toLowerCase().trim();
+  return !!adminEmail && pharmacy.email === adminEmail;
 }

@@ -52,6 +52,18 @@ La lista farmaci è filtrabile per stato e sulla scheda il pannello
 - Protezione anti-bot con campo esca (honeypot) e validazione server-side
 - Pagina dedicata `/segnalazioni` con ricerca e storico delle segnalazioni attive
 
+### Amministrazione e moderazione
+
+Un'area riservata `/admin` accessibile agli amministratori (ruolo `admin`
+oppure email indicata in `FARMACOMANCANTE_ADMIN_EMAIL`) permette di:
+
+- vedere panoramica e statistiche, con le fonti e il loro ultimo aggiornamento
+- **verificare le farmacie**: confronto automatico con l'anagrafe MDM importata
+  (corrispondenza esatta per P.IVA/codice, o probabile per denominazione e comune)
+  e approvazione manuale; le farmacie verificate mostrano un badge sulle schede pubbliche
+- moderare le segnalazioni: nascondere, ripristinare, marcare come risolte o eliminare
+- lanciare l'aggiornamento della lista AIFA da interfaccia
+
 ### Area farmacie
 
 - Registrazione e accesso con email e password
@@ -99,21 +111,26 @@ scripts/
   import-csv.mjs               Import/aggiornamento lista AIFA (--remote con fallback)
   import-farmacie-mdm.mjs      Adattatore anagrafe farmacie Ministero della Salute
 src/
+  instrumentation.ts           Avvio dello schedulatore interno
   lib/
     schema.sql                 Schema del database
-    db.ts                      Connessione, query e auto-seed
+    db.ts                      Connessione, query, migrazioni e auto-seed
     csv.ts / import.ts         Parsing CSV AIFA (Windows-1252, separatore ';')
     status.ts                  Motore del semaforo (regole di merge dei segnali)
+    scheduler.ts               Job giornaliero di aggiornamento AIFA
+    rate-limit.ts              Protezione anti-flood delle API pubbliche
     sources/                   Registro fonti e adattatore AIFA remoto
-    auth.ts                    Password, sessioni, cookie
+    auth.ts                    Password, sessioni, cookie, ruoli e token cron
     validation.ts / format.ts  Validazione e formattazione
   app/
     page.tsx                   Home
     farmaci/                   Lista (filtro a semaforo) e scheda farmaco
     segnalazioni/              Segnalazioni comunitarie
+    admin/                     Area di amministrazione e moderazione
     area-farmacie/             Landing, registrazione, accesso, dashboard
-    api/                       Route handler (auth, disponibilità, segnalazioni, ricerca)
+    api/                       Route handler (auth, admin, cron, disponibilità, segnalazioni)
   components/                  UI condivisa, mappa e moduli
+tests/                         Test automatici (semaforo, CSV, validazione, rate limit)
 ```
 
 ## Avvio rapido
@@ -163,19 +180,43 @@ il codice ministeriale/P.IVA delle farmacie iscritte e l'anagrafe ufficiale.
 Per l'automazione si può schedulare `import:remote` via cron/CI (roadmap: job
 schedulato interno all'applicazione).
 
+## Aggiornamenti automatici
+
+Due meccanismi, attivabili separatamente:
+
+1. **Schedulatore interno** (`src/lib/scheduler.ts`, registrato da
+   `src/instrumentation.ts`): al primo avvio recupera la lista se l'ultimo sync
+   supera le 20 ore, poi tenta l'import remoto ogni 24 ore. Disattivabile con
+   `FARMACOMANCANTE_SCHEDULER=off` (consigliato su hosting serverless).
+2. **Endpoint cron** `/api/cron/importa-aifa`, protetto da
+   `Authorization: Bearer <segreto>`, richiamabile da Vercel Cron
+   (`vercel.json` già configurato per le 06:00), crontab o GitHub Actions.
+
 ## Variabili d'ambiente
 
 | Variabile | Descrizione |
 | --- | --- |
 | `FARMACOMANCANTE_SECRET` | Segreto per firmare i cookie di sessione. Se assente, viene generato e salvato in `data/secret.key`. |
+| `FARMACOMANCANTE_ADMIN_EMAIL` | Email che identifica l'amministratore (anche senza ruolo admin nel database). |
+| `FARMACOMANCANTE_CRON_SECRET` | Segreto Bearer per l'endpoint cron. Se assente usa `FARMACOMANCANTE_SECRET`. |
+| `FARMACOMANCANTE_SCHEDULER` | Impostare a `off` per disattivare lo schedulatore interno. |
+
+## Test
+
+```bash
+npm test
+```
+
+Esegue con il test runner integrato di Node (via `tsx`) i test su motore del
+semaforo, parser CSV, validazione e rate limiting.
 
 ## Modello dati
 
 - `drug` — farmaci carenti (chiave: codice AIC), con colonna normalizzata per la ricerca
 - `import_batch` — storico delle importazioni della lista
-- `pharmacy` — anagrafica farmacie e credenziali
+- `pharmacy` — anagrafica farmacie e credenziali, con `role` (farmacia/admin) e flag `verified`
 - `availability` — segnalazioni `(farmacia, AIC)` con livello di scorta ed `expires_at`
-- `shortage_report` — segnalazioni comunitarie di mancanza/rientro, con AIC opzionale (farmaci non in lista), ruolo del segnalatore, canale (farmacia/grossista), scadenza
+- `shortage_report` — segnalazioni comunitarie di mancanza/rientro, con AIC opzionale (farmaci non in lista), ruolo del segnalatore, canale (farmacia/grossista), scadenza e flag di moderazione `hidden`
 - `external_source` — registro delle fonti e timestamp dell'ultima sincronizzazione
 - `external_signal` — segnali normalizzati degli adattatori esterni (es. anagrafe MDM)
 
@@ -186,6 +227,9 @@ schedulato interno all'applicazione).
 - Validazione server-side di tutti gli input e di tutte le date
 - Controllo di proprietà sulle operazioni sulle segnalazioni
 - Le API di scrittura sono protette: senza sessione valida rispondono `401`
+- Route e API di amministrazione riservate agli admin (`403` per gli altri)
+- Rate limiting in memoria sulle scritture pubbliche (segnalazioni, registrazioni, login) e campo esca anti-bot
+- Endpoint di manutenzione cron protetto da token Bearer
 
 > Stato MVP: la qualifica delle farmacie è auto-dichiarata. In produzione serve
 > una verifica dell'identità (es. codice farmacia/partita IVA validato e
@@ -193,13 +237,12 @@ schedulato interno all'applicazione).
 
 ## Roadmap suggerita
 
-- Validazione delle farmacie contro l'anagrafe MDM importata, moderazione e pagina di amministrazione
+- Verifica automatica delle farmacie al momento della registrazione (oggi il confronto MDM è manuale in area admin)
 - Adattatore per il dataset distributori/grossisti del Ministero e, ove possibile, connettori privati
-- Schedulazione automatica di `import:remote` (job periodico interno)
 - Notifiche via email quando un farmaco passa a verde o una segnalazione di mancanza si risolve
 - Pagina dedicata ai medici con vista "equivalenti + alternative AIFA"
 - Export CSV/API pubblica della lista, delle disponibilità e dei segnali
-- Test automatici e misure anti-abuso (rate limiting, CAPTCHA sulla registrazione)
+- CAPTCHA sulla registrazione e rate limiting condiviso tra più istanze (es. Redis)
 - PWA e segnalibro rapido dalla scheda farmaco
 
 ## Avvertenze

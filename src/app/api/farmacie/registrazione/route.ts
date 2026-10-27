@@ -9,6 +9,7 @@ import {
   validateProvince,
 } from "@/lib/validation";
 import { createSessionToken, hashPassword, SESSION_COOKIE } from "@/lib/auth";
+import { getClientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 interface RegisterBody {
   name?: string;
@@ -30,6 +31,11 @@ export async function POST(request: Request) {
     body = (await request.json()) as RegisterBody;
   } catch {
     return jsonError(400, "Richiesta non valida");
+  }
+
+  const limit = rateLimit(`registrazione:${getClientIp(request)}`, 5, 60 * 60 * 1000);
+  if (!limit.ok) {
+    return tooManyRequests(limit.retryAfterSeconds ?? 60);
   }
 
   const fields: Record<string, string> = {};

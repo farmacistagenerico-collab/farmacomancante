@@ -28,6 +28,25 @@ type GlobalWithDb = typeof globalThis & { __farmacomancanteDb?: DatabaseSync };
 function createSchema(db: DatabaseSync): void {
   const schemaPath = path.join(process.cwd(), "src", "lib", "schema.sql");
   db.exec(fs.readFileSync(schemaPath, "utf8"));
+  runMigrations(db);
+}
+
+/**
+ * Migrazioni leggere e additive per database già esistenti:
+ * aggiunge colonne introdotte dopo il primo rilascio senza perdere dati.
+ */
+function runMigrations(db: DatabaseSync): void {
+  const addColumn = (table: string, column: string, ddl: string) => {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as {
+      name: string;
+    }[];
+    if (!cols.some((c) => c.name === column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+    }
+  };
+  addColumn("pharmacy", "role", "role TEXT NOT NULL DEFAULT 'farmacia'");
+  addColumn("pharmacy", "verified", "verified INTEGER NOT NULL DEFAULT 0");
+  addColumn("shortage_report", "hidden", "hidden INTEGER NOT NULL DEFAULT 0");
 }
 
 export function getDb(): DatabaseSync {
@@ -359,6 +378,8 @@ interface PharmacyRow {
   phone: string | null;
   lat: number | null;
   lng: number | null;
+  role: string;
+  verified: number;
   created_at: string;
 }
 
@@ -375,6 +396,8 @@ function mapPharmacy(row: PharmacyRow): Pharmacy {
     phone: row.phone,
     lat: row.lat,
     lng: row.lng,
+    role: row.role === "admin" ? "admin" : "farmacia",
+    verified: row.verified,
     createdAt: row.created_at,
   };
 }
@@ -395,11 +418,13 @@ export interface NewPharmacyInput {
 
 export function createPharmacy(input: NewPharmacyInput): Pharmacy {
   const createdAt = new Date().toISOString();
+  const email = input.email.toLowerCase().trim();
+  const role = email === getAdminEmail() ? "admin" : "farmacia";
   const result = run(
     `INSERT INTO pharmacy
-      (email, password_hash, name, license_code, address, city, cap, province, phone, lat, lng, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    input.email.toLowerCase().trim(),
+      (email, password_hash, name, license_code, address, city, cap, province, phone, lat, lng, role, verified, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+    email,
     input.passwordHash,
     input.name.trim(),
     input.licenseCode ?? null,
@@ -410,9 +435,14 @@ export function createPharmacy(input: NewPharmacyInput): Pharmacy {
     input.phone ?? null,
     input.lat ?? null,
     input.lng ?? null,
+    role,
     createdAt
   );
   return getPharmacyById(Number(result.lastInsertRowid))!;
+}
+
+function getAdminEmail(): string | null {
+  return process.env.FARMACOMANCANTE_ADMIN_EMAIL?.toLowerCase().trim() || null;
 }
 
 export function getPharmacyByEmail(email: string): Pharmacy | null {
@@ -462,6 +492,7 @@ interface AvailabilityJoinRow extends AvailabilityRow {
   pharmacy_phone: string | null;
   pharmacy_lat: number | null;
   pharmacy_lng: number | null;
+  pharmacy_verified: number;
 }
 
 function mapAvailability(row: AvailabilityRow): Availability {
@@ -492,6 +523,7 @@ function mapAvailabilityView(row: AvailabilityJoinRow): AvailabilityView {
       phone: row.pharmacy_phone,
       lat: row.pharmacy_lat,
       lng: row.pharmacy_lng,
+      verified: row.pharmacy_verified ?? 0,
     },
   };
 }
@@ -501,7 +533,7 @@ const AVAILABILITY_SELECT = `
          p.name AS pharmacy_name, p.address AS pharmacy_address,
          p.city AS pharmacy_city, p.province AS pharmacy_province,
          p.cap AS pharmacy_cap, p.phone AS pharmacy_phone,
-         p.lat AS pharmacy_lat, p.lng AS pharmacy_lng
+         p.lat AS pharmacy_lat, p.lng AS pharmacy_lng, p.verified AS pharmacy_verified
   FROM availability a
   JOIN drug d ON d.aic = a.aic
   JOIN pharmacy p ON p.id = a.pharmacy_id`;
@@ -606,6 +638,7 @@ interface ShortageReportRow {
   note: string | null;
   status: string;
   reviewed: number;
+  hidden: number;
   expires_at: string;
   created_at: string;
   updated_at: string;
@@ -628,6 +661,7 @@ function mapShortageReport(row: ShortageReportRow): ShortageReportView {
     note: row.note,
     status: row.status as ShortageReport["status"],
     reviewed: row.reviewed,
+    hidden: row.hidden ?? 0,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -690,7 +724,7 @@ export function listActiveReportsByAic(aic: string): ShortageReportView[] {
   const today = todayISO();
   return all<ShortageReportRow>(
     `${REPORT_SELECT}
-     WHERE sr.aic = ? AND sr.status = 'attivo' AND sr.expires_at >= ?
+     WHERE sr.aic = ? AND sr.status = 'attivo' AND sr.hidden = 0 AND sr.expires_at >= ?
      ORDER BY sr.created_at DESC`,
     aic,
     today
@@ -722,7 +756,7 @@ export function listCommunityReports(params: {
   const today = todayISO();
   const page = Math.max(1, params.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 20));
-  const where = ["sr.status = 'attivo'", "sr.expires_at >= ?"];
+  const where = ["sr.status = 'attivo'", "sr.hidden = 0", "sr.expires_at >= ?"];
   const bindings: SQLInputValue[] = [today];
 
   const term = normalizeSearch(params.q ?? "");
@@ -754,7 +788,7 @@ export function searchCommunityReports(q: string, limit = 5): ShortageReportView
   const term = normalizeSearch(q);
   if (!term) return [];
   const tokens = term.split(" ").filter(Boolean);
-  const where = ["sr.status = 'attivo'", "sr.expires_at >= ?"];
+  const where = ["sr.status = 'attivo'", "sr.hidden = 0", "sr.expires_at >= ?"];
   const bindings: SQLInputValue[] = [today];
   for (const token of tokens) {
     where.push("(UPPER(sr.drug_name) LIKE ? OR UPPER(COALESCE(sr.active_ingredient, '')) LIKE ?)");
@@ -766,4 +800,153 @@ export function searchCommunityReports(q: string, limit = 5): ShortageReportView
     ...bindings,
     limit
   ).map(mapShortageReport);
+}
+
+// ---------- amministrazione e moderazione -------------------------------
+
+export interface PharmacyAdminRow extends Pharmacy {
+  reportCount: number;
+  availabilityCount: number;
+}
+
+export function listAllPharmacies(): PharmacyAdminRow[] {
+  const rows = all<PharmacyRow & { report_count: number; availability_count: number }>(
+    `SELECT p.*,
+      (SELECT COUNT(*) FROM shortage_report sr WHERE sr.pharmacy_id = p.id) AS report_count,
+      (SELECT COUNT(*) FROM availability av WHERE av.pharmacy_id = p.id) AS availability_count
+     FROM pharmacy p
+     ORDER BY p.created_at DESC`
+  );
+  return rows.map((r) => ({
+    ...mapPharmacy(r),
+    reportCount: r.report_count,
+    availabilityCount: r.availability_count,
+  }));
+}
+
+export function setPharmacyVerified(id: number, verified: boolean): boolean {
+  const result = run("UPDATE pharmacy SET verified = ? WHERE id = ?", verified ? 1 : 0, id);
+  return result.changes > 0;
+}
+
+export interface AdminReportFilter {
+  show?: "attivi" | "risolti" | "nascosti";
+  q?: string;
+  limit?: number;
+}
+
+export function listAllReports(filter: AdminReportFilter = {}): ShortageReportView[] {
+  const where: string[] = [];
+  const bindings: SQLInputValue[] = [];
+
+  if (filter.show === "risolti") where.push("sr.status = 'risolto'");
+  else if (filter.show === "nascosti") where.push("sr.hidden = 1");
+  else where.push("sr.status = 'attivo'");
+
+  const term = normalizeSearch(filter.q ?? "");
+  for (const token of term.split(" ").filter(Boolean)) {
+    where.push("(UPPER(sr.drug_name) LIKE ? OR UPPER(COALESCE(sr.active_ingredient, '')) LIKE ?)");
+    bindings.push(`%${token}%`, `%${token}%`);
+  }
+
+  return all<ShortageReportRow>(
+    `${REPORT_SELECT} ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+     ORDER BY sr.created_at DESC
+     LIMIT ?`,
+    ...bindings,
+    filter.limit ?? 200
+  ).map(mapShortageReport);
+}
+
+export function setReportHidden(id: number, hidden: boolean): boolean {
+  const result = run(
+    "UPDATE shortage_report SET hidden = ?, reviewed = 1, updated_at = ? WHERE id = ?",
+    hidden ? 1 : 0,
+    new Date().toISOString(),
+    id
+  );
+  return result.changes > 0;
+}
+
+export function adminDeleteReport(id: number): boolean {
+  return run("DELETE FROM shortage_report WHERE id = ?", id).changes > 0;
+}
+
+// ---------- incrocio con anagrafe MDM ------------------------------------
+
+export interface MdmMatch {
+  subject: string;
+  confidence: "esatta" | "probabile";
+  detail: string;
+}
+
+interface MdmSignalRow {
+  subject: string;
+  payload_json: string;
+}
+
+const onlyDigits = (v: string | null | undefined): string => (v ?? "").replace(/\D/g, "");
+const normText = (v: string | null | undefined): string =>
+  (v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+
+/**
+ * Confronta una farmacia iscritta con l'anagrafe del Ministero della Salute
+ * importata in external_signal: prima i codici (P.IVA / codice ASL / id ministeriale),
+ * poi un confronto probabilistico su denominazione e comune.
+ */
+export function findMdmMatch(pharmacy: Pharmacy): MdmMatch | null {
+  const signals = all<MdmSignalRow>(
+    "SELECT subject, payload_json FROM external_signal WHERE source_code = 'mdm-farmacie'"
+  );
+  if (signals.length === 0) return null;
+
+  const licenseDigits = onlyDigits(pharmacy.licenseCode);
+  const nameNorm = normText(pharmacy.name);
+  const cityNorm = normText(pharmacy.city);
+
+  for (const sig of signals) {
+    let payload: {
+      partitaIva?: string | null;
+      codiceAsl?: string | null;
+      denominazione?: string | null;
+      comune?: string | null;
+    };
+    try {
+      payload = JSON.parse(sig.payload_json);
+    } catch {
+      continue;
+    }
+    const candidates = [payload.partitaIva, payload.codiceAsl, sig.subject].map(onlyDigits).filter(Boolean);
+    if (licenseDigits && candidates.includes(licenseDigits)) {
+      return {
+        subject: sig.subject,
+        confidence: "esatta",
+        detail: `Corrispondenza per codice con ${payload.denominazione ?? sig.subject}`,
+      };
+    }
+  }
+
+  for (const sig of signals) {
+    let payload: { denominazione?: string | null; comune?: string | null };
+    try {
+      payload = JSON.parse(sig.payload_json);
+    } catch {
+      continue;
+    }
+    const denom = normText(payload.denominazione);
+    const comune = normText(payload.comune);
+    if (
+      denom &&
+      nameNorm &&
+      (denom.includes(nameNorm) || nameNorm.includes(denom)) &&
+      (!cityNorm || !comune || cityNorm === comune)
+    ) {
+      return {
+        subject: sig.subject,
+        confidence: "probabile",
+        detail: `Denominazione simile a ${payload.denominazione} (${payload.comune ?? "sede n/d"})`,
+      };
+    }
+  }
+  return null;
 }

@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { getPharmacyPasswordHash, getPharmacyById } from "@/lib/db";
 import { jsonError } from "@/lib/validation";
 import { createSessionToken, SESSION_COOKIE, verifyPassword } from "@/lib/auth";
+import { getClientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   let body: { email?: string; password?: string };
@@ -15,6 +16,11 @@ export async function POST(request: Request) {
   const password = body.password ?? "";
   if (!email || !password) {
     return jsonError(422, "Inserisci email e password");
+  }
+
+  const limit = rateLimit(`login:${getClientIp(request)}`, 10, 15 * 60 * 1000);
+  if (!limit.ok) {
+    return tooManyRequests(limit.retryAfterSeconds ?? 60);
   }
 
   const record = getPharmacyPasswordHash(email);
