@@ -1,0 +1,82 @@
+name: Docker
+
+# Costruisce l'immagine di produzione e la avvia davvero su un runner pulito.
+# Serve a verificare il Dockerfile, l'entrypoint e il primo avvio su un volume
+# vuoto: cose che non si possono provare senza un demone Docker.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  immagine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Costruisci l'immagine
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: farmacomancante:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Avvia il container e verifica il primo avvio
+        run: |
+          set -euo pipefail
+          docker run -d --name fm \
+            -p 3000:3000 \
+            -e FARMACOMANCANTE_SECRET="$(openssl rand -hex 32)" \
+            -e FARMACOMANCANTE_ADMIN_EMAIL=admin@example.it \
+            -e FARMACOMANCANTE_SITE_URL=https://esempio.it \
+            farmacomancante:ci
+
+          echo "Attendo che il database venga popolato dal CSV incluso…"
+          for i in $(seq 1 45); do
+            body="$(curl -fsS http://localhost:3000/api/health || true)"
+            if echo "$body" | grep -q '"status":"ok"' && echo "$body" | grep -q '"drugs":2514'; then
+              echo "Health OK dopo ${i} tentativi"
+              echo "$body"
+              break
+            fi
+            sleep 2
+          done
+
+          echo "$body" | grep -q '"drugs":2514' || {
+            echo "::error::Il container non ha importato la lista AIFA"
+            docker logs fm
+            exit 1
+          }
+
+      - name: Verifica pagine, aree riservate e URL runtime
+        run: |
+          set -euo pipefail
+          for path in / /farmaci /segnalazioni /come-funziona /parere /privacy /robots.txt /sitemap.xml /og-image.jpg; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000$path")
+            echo "$path -> $code"
+            [ "$code" = "200" ] || { echo "::error::$path ha risposto $code"; docker logs fm; exit 1; }
+          done
+
+          # 404 vera su una scheda inesistente
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/farmaci/000000000)
+          [ "$code" = "404" ] || { echo "::error::atteso 404, ricevuto $code"; exit 1; }
+
+          # Area admin protetta
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/admin)
+          [ "$code" = "307" ] || { echo "::error::atteso 307 sull'area admin, ricevuto $code"; exit 1; }
+
+          # L'URL pubblico arriva dall'ambiente, non dal build
+          curl -fsS http://localhost:3000/ | grep -q 'href="https://esempio.it"' \
+            || { echo "::error::canonical non usa FARMACOMANCANTE_SITE_URL"; exit 1; }
+
+      - name: Log del container in caso di problemi
+        if: failure()
+        run: docker logs fm || true
