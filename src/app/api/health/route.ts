@@ -28,7 +28,7 @@ export async function GET() {
     return Response.json(
       {
         status: healthy ? "ok" : booting ? "starting" : "degraded",
-        version: process.env.npm_package_version ?? "0.1.0",
+        version: process.env.npm_package_version ?? "1.0.0",
         env: process.env.NODE_ENV,
         production: isProduction(),
         data: {
