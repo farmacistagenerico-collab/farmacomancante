@@ -1,5 +1,9 @@
 # FarmacoMancante
 
+[![CI](https://github.com/farmacistagenerico-collab/farmacomancante/actions/workflows/ci.yml/badge.svg)](https://github.com/farmacistagenerico-collab/farmacomancante/actions/workflows/ci.yml)
+[![Docker](https://github.com/farmacistagenerico-collab/farmacomancante/actions/workflows/docker.yml/badge.svg)](https://github.com/farmacistagenerico-collab/farmacomancante/actions/workflows/docker.yml)
+[![Release](https://img.shields.io/github/v/release/farmacistagenerico-collab/farmacomancante)](https://github.com/farmacistagenerico-collab/farmacomancante/releases)
+
 Portale informativo sui **farmaci temporaneamente carenti in Italia**, pensato per
 medici prescrittori, cittadini e farmacie.
 
@@ -350,8 +354,15 @@ npm test
 ```
 
 Esegue con il test runner integrato di Node (via `tsx`) i test su motore del
-semaforo, parser CSV, validazione, rate limiting ed export dei pareri.
-La CI in `.github/workflows/ci.yml` esegue typecheck, test e build a ogni push.
+semaforo, parser CSV, validazione, rate limiting, export dei pareri e
+normalizzazione dell'URL pubblico.
+
+Due workflow GitHub Actions verificano ogni push:
+
+| Workflow | Cosa controlla |
+| --- | --- |
+| `.github/workflows/ci.yml` | typecheck, test e build su Node 22 |
+| `.github/workflows/docker.yml` | costruisce l'immagine, la avvia su un volume vuoto e verifica che importi i 2514 farmaci, che le pagine rispondano, che la 404 sia reale e che il canonical usi `FARMACOMANCANTE_SITE_URL` |
 
 ## Modello dati
 
