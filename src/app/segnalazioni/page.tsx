@@ -9,6 +9,7 @@ export const metadata: Metadata = {
   title: "Segnalazioni di mancanza",
   description:
     "Segnalazioni comunitarie di farmaci mancanti o in corso di risoluzione, anche non ancora presenti nella lista ufficiale AIFA.",
+  alternates: { canonical: "/segnalazioni" },
 };
 
 interface PageProps {

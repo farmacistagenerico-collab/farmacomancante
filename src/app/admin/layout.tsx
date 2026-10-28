@@ -2,7 +2,10 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentPharmacy, isAdmin } from "@/lib/auth";
 
-export const metadata = { title: "Amministrazione" };
+export const metadata = {
+  title: "Amministrazione",
+  robots: { index: false, follow: false },
+};
 
 export default async function AdminLayout({
   children,

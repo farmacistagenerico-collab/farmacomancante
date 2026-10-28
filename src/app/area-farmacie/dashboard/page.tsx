@@ -6,7 +6,10 @@ import { listMyAvailability, listReportsByPharmacy } from "@/lib/db";
 import { AvailabilityManager } from "@/components/AvailabilityManager";
 import { ReportsList } from "@/components/ReportsList";
 
-export const metadata: Metadata = { title: "Dashboard farmacia" };
+export const metadata: Metadata = {
+  title: "Dashboard farmacia",
+  robots: { index: false, follow: false },
+};
 
 export default async function DashboardPage() {
   const pharmacy = await getCurrentPharmacy();

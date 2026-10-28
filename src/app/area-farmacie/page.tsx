@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getCurrentPharmacy } from "@/lib/auth";
 
-export const metadata: Metadata = { title: "Area farmacie" };
+export const metadata: Metadata = {
+  title: "Area farmacie",
+  robots: { index: false, follow: false },
+};
 
 export default async function AreaFarmaciePage() {
   const pharmacy = await getCurrentPharmacy();

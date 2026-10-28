@@ -173,11 +173,11 @@ npm run dev
 Al primo avvio il database viene creato e popolato automaticamente importando
 `data/raw/elenco_medicinali_carenti.csv` (la lista AIFA allegata al progetto).
 
-Produzione:
+Produzione (stesso runtime del container: server standalone):
 
 ```bash
-npm run build
-npm run start
+npm run build     # compila e prepara .next/standalone
+npm start         # avvia server.js su 0.0.0.0:3000
 ```
 
 ### Dati dimostrativi
@@ -249,6 +249,36 @@ a un database gestito (Postgres/Turso): l'accesso ai dati è già concentrato in
 4. `/api/health` verde e `data.fresh: true`.
 5. Privacy policy adattata al titolare reale (`/privacy`).
 6. Registra il sito in Google Search Console e invia `sitemap.xml`.
+
+### Prestazioni e SEO (verificato prima del deploy)
+
+Misure sul server di produzione in locale (SQLite, 2514 farmaci):
+
+| Indicatore | Valore |
+| --- | --- |
+| TTFB | 9-17 ms su tutte le pagine pubbliche |
+| HTML trasferito (gzip) | 13-20 KB per pagina |
+| JavaScript condiviso | ~148 KB gzip, 8 chunk |
+| Font esterni / richieste di terze parti | nessuna (stack di sistema) |
+| Leaflet (mappa) | caricato solo sulla scheda con disponibilità, via `next/dynamic` |
+| Immagine social | 41 KB (era 635 KB in PNG) |
+| Sitemap | 2520 URL |
+
+Scelte adottate:
+
+- **Canonical per pagina.** Il canonical non è più ereditato dal layout: ogni
+  pagina dichiara il proprio, così le schede farmaco non risultano duplicati
+  della home.
+- **404 vere sulle schede.** Il `loading.tsx` del segmento faceva partire lo
+  streaming prima di `notFound()`, che quindi restituiva 200 con contenuto di
+  errore. La lista è stata spostata in un route group `(elenco)` con il proprio
+  loading, e la scheda valida l'AIC in `layout.tsx` prima del render.
+- **Aree riservate fuori dai motori**: `noindex, nofollow` su `/admin` e
+  `/area-farmacie`, oltre al `Disallow` in `robots.txt`.
+- **Dati strutturati JSON-LD** (`WebSite` + `SearchAction` + `Organization`).
+- **`npm start` onesto**: `build` prepara `.next/standalone` e `start` avvia
+  `server.js`, lo stesso runtime del container (con `output: "standalone"` il
+  comando `next start` è sconsigliato da Next stesso).
 
 ## Aggiornamento periodico della lista AIFA
 

@@ -4,7 +4,10 @@ import { redirect } from "next/navigation";
 import { getCurrentPharmacy } from "@/lib/auth";
 import { LoginForm } from "@/components/LoginForm";
 
-export const metadata: Metadata = { title: "Accedi" };
+export const metadata: Metadata = {
+  title: "Accedi",
+  robots: { index: false, follow: false },
+};
 
 export default async function AccediPage() {
   const pharmacy = await getCurrentPharmacy();

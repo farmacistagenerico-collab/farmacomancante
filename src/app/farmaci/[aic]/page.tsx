@@ -24,7 +24,24 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { aic } = await params;
   const drug = getDrugByAic(aic);
-  return { title: drug ? `${drug.name} (AIC ${drug.aic})` : "Farmaco non trovato" };
+  if (!drug) {
+    return { title: "Farmaco non trovato", robots: { index: false, follow: false } };
+  }
+  const parts = [
+    drug.activeIngredient ? `${drug.activeIngredient}` : null,
+    `AIC ${drug.aic}`,
+    "carenza, equivalenti e farmacie con disponibilità",
+  ].filter(Boolean);
+  return {
+    title: `${drug.name} (AIC ${drug.aic})`,
+    description: `${drug.name}: ${parts.join(" · ")}. Stato aggiornato dalla lista AIFA e dalle segnalazioni delle farmacie.`,
+    alternates: { canonical: `/farmaci/${drug.aic}` },
+    openGraph: {
+      type: "article",
+      title: `${drug.name} — carenza e disponibilità`,
+      description: `${drug.name} (AIC ${drug.aic}). Stato della carenza e farmacie con disponibilità attiva.`,
+    },
+  };
 }
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {

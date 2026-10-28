@@ -12,7 +12,12 @@ import { StatusBadge, SignalBadge } from "@/components/StatusBadge";
 import { Pagination } from "@/components/Pagination";
 import type { DrugStatus } from "@/lib/types";
 
-export const metadata: Metadata = { title: "Lista farmaci carenti" };
+export const metadata: Metadata = {
+  title: "Lista farmaci carenti",
+  description:
+    "Elenco aggiornato dei medicinali temporaneamente carenti in Italia, con ricerca per nome, principio attivo o codice AIC, equivalenti disponibili e semaforo delle disponibilità.",
+  alternates: { canonical: "/farmaci" },
+};
 
 interface PageProps {
   searchParams: Promise<{

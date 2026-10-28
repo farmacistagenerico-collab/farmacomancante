@@ -5,8 +5,8 @@
   "description": "Portale pubblico sui farmaci carenti in Italia: lista AIFA, semaforo delle carenze, disponibilità segnalate dalle farmacie e questionario di valutazione.",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "build": "next build && node scripts/prepare-standalone.mjs",
+    "start": "node scripts/serve.mjs",
     "import": "node scripts/import-csv.mjs",
     "import:remote": "node scripts/import-csv.mjs --remote",
     "import:farmacie-mdm": "node scripts/import-farmacie-mdm.mjs",
@@ -14,9 +14,9 @@
     "docker:build": "docker build -t farmacomancante .",
     "docker:up": "docker compose up -d --build",
     "docker:logs": "docker compose logs -f web",
-    "start:prod": "next start -H 0.0.0.0 -p 3000",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "start:next": "next start -H 0.0.0.0 -p 3000"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

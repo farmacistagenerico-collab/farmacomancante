@@ -4,7 +4,10 @@ import { redirect } from "next/navigation";
 import { getCurrentPharmacy } from "@/lib/auth";
 import { RegisterForm } from "@/components/RegisterForm";
 
-export const metadata: Metadata = { title: "Registrazione farmacia" };
+export const metadata: Metadata = {
+  title: "Registrazione farmacia",
+  robots: { index: false, follow: false },
+};
 
 export default async function RegistratiPage() {
   const pharmacy = await getCurrentPharmacy();

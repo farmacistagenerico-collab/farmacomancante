@@ -1,7 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ensureData, getLatestBatch, getStats } from "@/lib/db";
 import { formatDateIT } from "@/lib/format";
 import { SearchForm } from "@/components/SearchForm";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 export default async function HomePage() {
   await ensureData();
