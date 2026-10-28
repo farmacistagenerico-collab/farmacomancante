@@ -231,6 +231,9 @@ docker build   --build-arg NEXT_PUBLIC_SITE_URL=https://farmacomancante.it   --b
 
 ### Opzione B — Render / PaaS con Dockerfile
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/farmacistagenerico-collab/farmacomancante)
+
+
 `render.yaml` descrive il servizio (Docker, health check su `/api/health`,
 disco da 1 GB montato su `/data`). Su Render: *New → Blueprint*, collega il
 repository e inserisci i valori richiesti. Il disco persistente richiede un
@@ -335,8 +338,10 @@ Due meccanismi, attivabili separatamente:
 | `FARMACOMANCANTE_SCHEDULER` | Impostare a `off` per disattivare lo schedulatore interno. |
 | `FARMACOMANCANTE_DATA_DIR` | Cartella di database e CSV (default `./data`, in container `/data`). |
 | `FARMACOMANCANTE_INSECURE_COOKIES` | `1` per disattivare il flag `Secure` sui cookie quando il sito è servito in HTTP (solo test). |
-| `NEXT_PUBLIC_SITE_URL` | URL pubblico canonico, senza slash finale. **Va impostato in fase di build.** |
-| `NEXT_PUBLIC_CONTACT_EMAIL` | Indirizzo mostrato nel footer e nella privacy policy. |
+| `FARMACOMANCANTE_SITE_URL` | URL pubblico canonico, senza slash finale. **Letto a runtime**: impostalo nel pannello del servizio, anche dopo il primo deploy. |
+| `FARMACOMANCANTE_CONTACT_EMAIL` | Indirizzo mostrato nel footer e nella privacy policy (letto a runtime). |
+| `NEXT_PUBLIC_SITE_URL` | Alternativa incorporata nel bundle a build time. Serve solo se costruisci l'immagine conoscendo già il dominio finale. |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | Come sopra, per il contatto pubblico. |
 
 ## Test
 

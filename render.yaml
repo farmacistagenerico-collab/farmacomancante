@@ -25,9 +25,10 @@ services:
         generateValue: true
       - key: FARMACOMANCANTE_ADMIN_EMAIL
         sync: false
-      - key: NEXT_PUBLIC_SITE_URL
+      # URL pubblico: letto a runtime, quindi impostabile dopo il primo deploy.
+      - key: FARMACOMANCANTE_SITE_URL
         sync: false
-      - key: NEXT_PUBLIC_CONTACT_EMAIL
+      - key: FARMACOMANCANTE_CONTACT_EMAIL
         sync: false
       - key: FARMACOMANCANTE_DATA_DIR
         value: /data
