@@ -17,6 +17,11 @@ Tre obiettivi:
    corso di risoluzione. I segnali di tutte le fonti vengono incrociati in uno
    stato a semaforo per ogni medicinale.
 
+> **Stato: pronto per la pubblicazione.** Include build di produzione,
+> immagine Docker, health check, SEO (robots, sitemap, immagine social),
+> informativa privacy e un questionario per raccogliere i pareri dei colleghi.
+> Vedi [Pubblicazione](#pubblicazione) per portarlo online in pochi minuti.
+
 ## Funzionalità
 
 ### Area pubblica
@@ -51,6 +56,19 @@ La lista farmaci è filtrabile per stato e sulla scheda il pannello
 - Validità 14 giorni, poi la segnalazione si spegne da sola; la farmacia autrice può chiuderla anticipatamente
 - Protezione anti-bot con campo esca (honeypot) e validazione server-side
 - Pagina dedicata `/segnalazioni` con ricerca e storico delle segnalazioni attive
+
+### Trasparenza e ascolto
+
+- **`/come-funziona`** — percorso del dato, regole del semaforo, tabella delle
+  fonti con l'ultima sincronizzazione.
+- **`/privacy`** — informativa GDPR in italiano semplice: dati raccolti,
+  finalità, conservazione, cookie, diritti.
+- **`/parere`** — questionario di due minuti per medici, farmacisti e cittadini:
+  voti 1-5 su utilità, chiarezza e fiducia, consiglierebbe sì/forse/no, funzioni
+  usate, cosa manca e commento libero. Le risposte finiscono in `/admin/pareri`
+  con medie, composizione del campione, moderazione ed **export CSV**.
+- **Header e footer** — navigazione con menu mobile accessibile (funziona anche
+  senza JavaScript) e link al questionario.
 
 ### Amministrazione e moderazione
 
@@ -104,6 +122,11 @@ per la validazione futura del codice ministeriale / P.IVA delle farmacie iscritt
 ## Struttura
 
 ```
+assets/
+  elenco_medicinali_carenti.csv CSV AIFA incluso nell'immagine di deploy
+docker/
+  entrypoint.sh                 Prepara il volume dati al primo avvio
+Dockerfile / docker-compose.yml / render.yaml / .github/workflows/ci.yml
 data/
   raw/                          CSV AIFA (committato, fa da seed al primo avvio)
   farmacomancante.db           SQLite locale (generato, gitignorato)
@@ -119,6 +142,8 @@ src/
     status.ts                  Motore del semaforo (regole di merge dei segnali)
     scheduler.ts               Job giornaliero di aggiornamento AIFA
     rate-limit.ts              Protezione anti-flood delle API pubbliche
+    paths.ts                   Percorsi dati configurabili (volume di deploy)
+    site.ts                    Nome, URL pubblico e contatti del sito
     sources/                   Registro fonti e adattatore AIFA remoto
     auth.ts                    Password, sessioni, cookie, ruoli e token cron
     validation.ts / format.ts  Validazione e formattazione
@@ -126,11 +151,15 @@ src/
     page.tsx                   Home
     farmaci/                   Lista (filtro a semaforo) e scheda farmaco
     segnalazioni/              Segnalazioni comunitarie
-    admin/                     Area di amministrazione e moderazione
+    come-funziona/             Trasparenza su fonti, regole e semaforo
+    parere/                    Questionario pubblico di valutazione
+    privacy/                   Informativa privacy (GDPR)
+    admin/                     Amministrazione, moderazione e pareri
+    robots.ts / sitemap.ts     SEO
     area-farmacie/             Landing, registrazione, accesso, dashboard
     api/                       Route handler (auth, admin, cron, disponibilità, segnalazioni)
   components/                  UI condivisa, mappa e moduli
-tests/                         Test automatici (semaforo, CSV, validazione, rate limit)
+tests/                         Test automatici (semaforo, CSV, validazione, rate limit, pareri)
 ```
 
 ## Avvio rapido
@@ -170,6 +199,56 @@ Più una disponibilità attiva (ZYPREXA, AIC `033638204` → 🟢), una segnalaz
 risoluzione (OLANZAPINA ACCORD `041598133` → 🟡), una di mancanza (ABIOCLAV
 `037350016` → 🔴) e una segnalazione libera fuori lista AIFA.
 Le credenziali sono solo per uso locale: non impostare `password123` in produzione.
+
+## Pubblicazione
+
+Il portale è pensato per girare su un servizio con **disco persistente**: il
+database è SQLite (`node:sqlite`) e vive nella cartella indicata da
+`FARMACOMANCANTE_DATA_DIR`.
+
+### Opzione A — Docker su un VPS (consigliata)
+
+```bash
+cp .env.example .env        # compila URL pubblico, email, segreti
+docker compose up -d --build
+docker compose logs -f web  # verifica l'avvio
+```
+
+Il volume `fm-data` conserva database e segreti tra un deploy e l'altro.
+L'immagine è multi-stage e parte da `next build` con `output: "standalone"`:
+circa 150 MB, utente non privilegiato, `HEALTHCHECK` su `/api/health`.
+
+Per un URL pubblico configura **il build arg**, non solo la variabile a runtime
+(le `NEXT_PUBLIC_*` vengono incorporate nel bundle in fase di build):
+
+```bash
+docker build   --build-arg NEXT_PUBLIC_SITE_URL=https://farmacomancante.it   --build-arg NEXT_PUBLIC_CONTACT_EMAIL=info@farmacomancante.it   -t farmacomancante .
+```
+
+### Opzione B — Render / PaaS con Dockerfile
+
+`render.yaml` descrive il servizio (Docker, health check su `/api/health`,
+disco da 1 GB montato su `/data`). Su Render: *New → Blueprint*, collega il
+repository e inserisci i valori richiesti. Il disco persistente richiede un
+piano a pagamento; senza disco il database si ricrea a ogni deploy.
+
+### Opzione C — Vercel o altro serverless
+
+Il filesystem non è persistente, quindi SQLite non è adatto. Servirebbe passare
+a un database gestito (Postgres/Turso): l'accesso ai dati è già concentrato in
+`src/lib/db.ts`, ma la migrazione non è inclusa.
+
+### Prima di condividere il link — checklist
+
+1. `FARMACOMANCANTE_SECRET` e `FARMACOMANCANTE_CRON_SECRET` con valori casuali
+   (`openssl rand -hex 32`), diversi tra loro.
+2. `FARMACOMANCANTE_ADMIN_EMAIL` con la tua email: registrandoti ottieni subito
+   l'accesso a `/admin`.
+3. `NEXT_PUBLIC_SITE_URL` corretto: finisce in canonical, Open Graph, sitemap e
+   anteprime di WhatsApp/Telegram/LinkedIn.
+4. `/api/health` verde e `data.fresh: true`.
+5. Privacy policy adattata al titolare reale (`/privacy`).
+6. Registra il sito in Google Search Console e invia `sitemap.xml`.
 
 ## Aggiornamento periodico della lista AIFA
 
@@ -220,6 +299,10 @@ Due meccanismi, attivabili separatamente:
 | `FARMACOMANCANTE_ADMIN_EMAIL` | Email che identifica l'amministratore (anche senza ruolo admin nel database). |
 | `FARMACOMANCANTE_CRON_SECRET` | Segreto Bearer per l'endpoint cron. Se assente usa `FARMACOMANCANTE_SECRET`. |
 | `FARMACOMANCANTE_SCHEDULER` | Impostare a `off` per disattivare lo schedulatore interno. |
+| `FARMACOMANCANTE_DATA_DIR` | Cartella di database e CSV (default `./data`, in container `/data`). |
+| `FARMACOMANCANTE_INSECURE_COOKIES` | `1` per disattivare il flag `Secure` sui cookie quando il sito è servito in HTTP (solo test). |
+| `NEXT_PUBLIC_SITE_URL` | URL pubblico canonico, senza slash finale. **Va impostato in fase di build.** |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | Indirizzo mostrato nel footer e nella privacy policy. |
 
 ## Test
 
@@ -228,7 +311,8 @@ npm test
 ```
 
 Esegue con il test runner integrato di Node (via `tsx`) i test su motore del
-semaforo, parser CSV, validazione e rate limiting.
+semaforo, parser CSV, validazione, rate limiting ed export dei pareri.
+La CI in `.github/workflows/ci.yml` esegue typecheck, test e build a ogni push.
 
 ## Modello dati
 
@@ -239,6 +323,7 @@ semaforo, parser CSV, validazione e rate limiting.
 - `shortage_report` — segnalazioni comunitarie di mancanza/rientro, con AIC opzionale (farmaci non in lista), ruolo del segnalatore, canale (farmacia/grossista), scadenza e flag di moderazione `hidden`
 - `external_source` — registro delle fonti e timestamp dell'ultima sincronizzazione
 - `external_signal` — segnali normalizzati degli adattatori esterni (es. anagrafe MDM)
+- `feedback` — risposte al questionario di valutazione (ruolo, voti 1-5, cosa manca, commento, moderazione)
 
 ## Sicurezza (stato attuale)
 
@@ -248,14 +333,29 @@ semaforo, parser CSV, validazione e rate limiting.
 - Controllo di proprietà sulle operazioni sulle segnalazioni
 - Le API di scrittura sono protette: senza sessione valida rispondono `401`
 - Route e API di amministrazione riservate agli admin (`403` per gli altri)
+- Cookie `Secure` automatico in produzione, disattivabile solo con
+  `FARMACOMANCANTE_INSECURE_COOKIES=1`
+- Header di sicurezza su tutte le risposte: `X-Content-Type-Options`,
+  `Referrer-Policy`, `Permissions-Policy`, HSTS in produzione
+- `poweredByHeader` disattivato e cache immutabile per gli asset con hash
+- Anti-spam su tutti i moduli pubblici: honeypot, limiti per IP, validazione
+  server-side, scadenza automatica dei contenuti
+- `/api/health` per monitoraggio e healthcheck del container (senza segreti)
+- Sessioni invalidabili cambiando `FARMACOMANCANTE_SECRET`
 - Rate limiting in memoria sulle scritture pubbliche (segnalazioni, registrazioni, login) e campo esca anti-bot
 - Endpoint di manutenzione cron protetto da token Bearer
 
-> Stato MVP: la qualifica delle farmacie è auto-dichiarata. In produzione serve
-> una verifica dell'identità (es. codice farmacia/partita IVA validato e
-> moderazione) prima di rendere pubbliche le segnalazioni.
+> Nota sulla qualifica delle farmacie: la registrazione è libera, ma le
+> disponibilità sono mostrate con il badge "Verificata" solo dopo il controllo in
+> `/admin/farmacie`, dove l'incrocio con l'anagrafe MDM propone la corrispondenza
+> esatta (codice ministeriale/P.IVA) o probabile (denominazione + comune).
+> Prima di un uso massivo vale la pena completare la verifica automatica in fase
+> di registrazione.
 
 ## Roadmap suggerita
+
+Fatto: area admin, moderazione, verifica farmacie, automazione import, header di
+sicurezza, SEO, deploy Docker, questionario con export CSV.
 
 - Verifica automatica delle farmacie al momento della registrazione (oggi il confronto MDM è manuale in area admin)
 - Adattatore per il dataset distributori/grossisti del Ministero e, ove possibile, connettori privati

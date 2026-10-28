@@ -7,8 +7,10 @@ import {
 } from "@/lib/format";
 import { SignalBadge } from "@/components/StatusBadge";
 import { ReportModerationButtons } from "@/components/admin/AdminButtons";
+import { requireAdminPage } from "@/lib/admin-guard";
 
 export const metadata = { title: "Segnalazioni · Admin" };
+export const dynamic = "force-dynamic";
 
 const FILTERS: { value: "attivi" | "risolti" | "nascosti"; label: string }[] = [
   { value: "attivi", label: "Attive" },
@@ -21,6 +23,7 @@ export default async function AdminReportsPage({
 }: {
   searchParams: Promise<{ vista?: string; q?: string }>;
 }) {
+  await requireAdminPage();
   const sp = await searchParams;
   const show = (["attivi", "risolti", "nascosti"] as const).find((v) => v === sp.vista) ?? "attivi";
   const q = sp.q?.trim() ?? "";

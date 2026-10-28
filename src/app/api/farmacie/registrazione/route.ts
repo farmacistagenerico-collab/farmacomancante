@@ -8,7 +8,12 @@ import {
   validatePassword,
   validateProvince,
 } from "@/lib/validation";
-import { createSessionToken, hashPassword, SESSION_COOKIE } from "@/lib/auth";
+import {
+  createSessionToken,
+  hashPassword,
+  SESSION_COOKIE,
+  sessionCookieOptions,
+} from "@/lib/auth";
 import { getClientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 interface RegisterBody {
@@ -75,12 +80,7 @@ export async function POST(request: Request) {
   });
 
   const store = await cookies();
-  store.set(SESSION_COOKIE, createSessionToken(pharmacy.id), {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 7 * 24 * 60 * 60,
-  });
+  store.set(SESSION_COOKIE, createSessionToken(pharmacy.id), sessionCookieOptions());
 
   return Response.json({ ok: true, pharmacy: { id: pharmacy.id, name: pharmacy.name } });
 }

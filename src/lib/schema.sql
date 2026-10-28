@@ -122,3 +122,26 @@ CREATE TABLE IF NOT EXISTS external_signal (
 );
 
 CREATE INDEX IF NOT EXISTS idx_external_signal_aic ON external_signal(aic);
+
+-- Questionari di valutazione raccolti tra colleghi e visitatori.
+-- Servono a misurare utilità, chiarezza e fiducia del portale.
+CREATE TABLE IF NOT EXISTS feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  role TEXT NOT NULL,                    -- medico | farmacista | cittadino | altro
+  name TEXT,
+  email TEXT,
+  city TEXT,
+  region TEXT,
+  rating_useful INTEGER NOT NULL,        -- 1..5
+  rating_clarity INTEGER NOT NULL,       -- 1..5
+  rating_trust INTEGER NOT NULL,         -- 1..5
+  recommend TEXT NOT NULL,               -- si | forse | no
+  used_features TEXT,                    -- elenco separato da virgole
+  missing TEXT,                          -- cosa manca, testo libero
+  comment TEXT,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_role ON feedback(role);

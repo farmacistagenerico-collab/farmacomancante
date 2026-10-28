@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { RAW_CSV_PATH } from "../db";
+import { bundledCsvPath } from "../paths";
 import { AIFA_CSV_URL } from "./registry";
 
 export interface AifaCsvResult {
@@ -25,14 +25,15 @@ export async function fetchAifaCsv(timeoutMs = 20000): Promise<AifaCsvResult> {
     const buffer = Buffer.from(await res.arrayBuffer());
     return { csvText: new TextDecoder("windows-1252").decode(buffer), source: "remote" };
   } catch (err) {
-    if (!fs.existsSync(RAW_CSV_PATH)) {
+    const localCsv = bundledCsvPath();
+    if (!localCsv) {
       throw new Error(
         `Impossibile scaricare la lista AIFA e nessun CSV locale disponibile: ${
           (err as Error).message
         }`
       );
     }
-    const buffer = fs.readFileSync(RAW_CSV_PATH);
+    const buffer = fs.readFileSync(localCsv);
     return { csvText: new TextDecoder("windows-1252").decode(buffer), source: "local" };
   }
 }

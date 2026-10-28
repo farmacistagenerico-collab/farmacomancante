@@ -145,6 +145,32 @@ export default async function HomePage() {
               </li>
             ))}
           </ol>
+          <p className="mt-8 text-center">
+            <Link href="/come-funziona" className="text-sm font-semibold text-brand-700 hover:underline">
+              Le fonti, i controlli e le regole del semaforo →
+            </Link>
+          </p>
+        </div>
+      </section>
+
+      {/* Invito al questionario */}
+      <section className="border-t border-slate-200 bg-brand-700">
+        <div className="container-app flex flex-col items-start gap-6 py-12 sm:flex-row sm:items-center sm:justify-between">
+          <div className="max-w-2xl">
+            <h2 className="text-2xl font-bold text-white">
+              Lo stai usando in studio o in farmacia?
+            </h2>
+            <p className="mt-2 text-brand-50">
+              Due minuti per dirci se il portale risponde a un bisogno reale e cosa
+              manca. I pareri dei colleghi guidano le prossime funzioni.
+            </p>
+          </div>
+          <Link
+            href="/parere"
+            className="shrink-0 rounded-lg bg-white px-5 py-3 text-sm font-semibold text-brand-800 shadow-sm transition hover:bg-brand-50"
+          >
+            Dai la tua opinione
+          </Link>
         </div>
       </section>
     </div>

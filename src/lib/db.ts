@@ -9,6 +9,11 @@ import type {
   DrugStatus,
   DrugStatusInfo,
   ExternalSource,
+  Feedback,
+  FeedbackRecommend,
+  FeedbackRole,
+  FeedbackSummary,
+  NewFeedbackInput,
   Pharmacy,
   ShortageReport,
   ShortageReportView,
@@ -18,16 +23,15 @@ import { normalizeSearch } from "./csv";
 import { todayISO } from "./format";
 import { computeDrugStatus } from "./status";
 import { SOURCE_REGISTRY } from "./sources/registry";
+import { bundledCsvPath, dataDir, dbPath, rawCsvPath, schemaPath } from "./paths";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-export const DB_PATH = path.join(DATA_DIR, "farmacomancante.db");
-export const RAW_CSV_PATH = path.join(DATA_DIR, "raw", "elenco_medicinali_carenti.csv");
+export const DB_PATH = dbPath();
+export const RAW_CSV_PATH = rawCsvPath();
 
 type GlobalWithDb = typeof globalThis & { __farmacomancanteDb?: DatabaseSync };
 
 function createSchema(db: DatabaseSync): void {
-  const schemaPath = path.join(process.cwd(), "src", "lib", "schema.sql");
-  db.exec(fs.readFileSync(schemaPath, "utf8"));
+  db.exec(fs.readFileSync(schemaPath(), "utf8"));
   runMigrations(db);
 }
 
@@ -52,7 +56,7 @@ function runMigrations(db: DatabaseSync): void {
 export function getDb(): DatabaseSync {
   const g = globalThis as GlobalWithDb;
   if (!g.__farmacomancanteDb) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.mkdirSync(dataDir(), { recursive: true });
     const db = new DatabaseSync(DB_PATH);
     createSchema(db);
     seedSources(db);
@@ -118,10 +122,13 @@ function run(sql: string, ...params: SQLInputValue[]) {
 /** Al primo avvio importa automaticamente il CSV presente in data/raw */
 export async function ensureData(): Promise<void> {
   const count = one<{ n: number }>("SELECT COUNT(*) AS n FROM drug");
-  if ((count?.n ?? 0) === 0 && fs.existsSync(RAW_CSV_PATH)) {
-    const { importCsv } = await import("./import");
-    await importCsv(getDb(), RAW_CSV_PATH);
-  }
+  if ((count?.n ?? 0) !== 0) return;
+  // Prima il CSV nella cartella dati, poi la copia inclusa nel pacchetto:
+  // così il primo avvio funziona anche con un volume vuoto e senza rete.
+  const csv = fs.existsSync(RAW_CSV_PATH) ? RAW_CSV_PATH : bundledCsvPath();
+  if (!csv) return;
+  const { importCsv } = await import("./import");
+  await importCsv(getDb(), csv);
 }
 
 // ---------- mapping righe -> tipi -----------------------------------------
@@ -325,6 +332,11 @@ export function getDrugByAic(aic: string): Drug | null {
 }
 
 // ---------- lista AIFA / statistiche --------------------------------------
+
+/** Elenco degli AIC presenti, usato dalla sitemap. */
+export function listDrugAics(): string[] {
+  return all<{ aic: string }>("SELECT aic FROM drug ORDER BY aic").map((r) => r.aic);
+}
 
 export function getLatestBatch(): {
   listDate: string | null;
@@ -949,4 +961,187 @@ export function findMdmMatch(pharmacy: Pharmacy): MdmMatch | null {
     }
   }
   return null;
+}
+
+// ---------- questionario di valutazione -----------------------------------
+
+interface FeedbackRow {
+  id: number;
+  role: string;
+  name: string | null;
+  email: string | null;
+  city: string | null;
+  region: string | null;
+  rating_useful: number;
+  rating_clarity: number;
+  rating_trust: number;
+  recommend: string;
+  used_features: string | null;
+  missing: string | null;
+  comment: string | null;
+  hidden: number;
+  created_at: string;
+}
+
+function mapFeedback(row: FeedbackRow): Feedback {
+  const role: FeedbackRole =
+    row.role === "medico" || row.role === "farmacista" || row.role === "cittadino"
+      ? row.role
+      : "altro";
+  const recommend: FeedbackRecommend =
+    row.recommend === "si" || row.recommend === "no" ? row.recommend : "forse";
+  return {
+    id: row.id,
+    role,
+    name: row.name,
+    email: row.email,
+    city: row.city,
+    region: row.region,
+    ratingUseful: row.rating_useful,
+    ratingClarity: row.rating_clarity,
+    ratingTrust: row.rating_trust,
+    recommend,
+    usedFeatures: row.used_features ? row.used_features.split(",").filter(Boolean) : [],
+    missing: row.missing,
+    comment: row.comment,
+    hidden: row.hidden,
+    createdAt: row.created_at,
+  };
+}
+
+export function createFeedback(input: NewFeedbackInput): Feedback {
+  const result = run(
+    `INSERT INTO feedback
+       (role, name, email, city, region, rating_useful, rating_clarity, rating_trust,
+        recommend, used_features, missing, comment, hidden, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+    input.role,
+    input.name ?? null,
+    input.email ?? null,
+    input.city ?? null,
+    input.region ?? null,
+    input.ratingUseful,
+    input.ratingClarity,
+    input.ratingTrust,
+    input.recommend,
+    input.usedFeatures?.length ? input.usedFeatures.join(",") : null,
+    input.missing ?? null,
+    input.comment ?? null,
+    new Date().toISOString()
+  );
+  return getFeedbackById(Number(result.lastInsertRowid))!;
+}
+
+export function getFeedbackById(id: number): Feedback | null {
+  const row = one<FeedbackRow>("SELECT * FROM feedback WHERE id = ?", id);
+  return row ? mapFeedback(row) : null;
+}
+
+export function listFeedback(options: { includeHidden?: boolean; limit?: number } = {}): Feedback[] {
+  const limit = Math.min(Math.max(options.limit ?? 200, 1), 1000);
+  const where = options.includeHidden ? "" : "WHERE hidden = 0";
+  return all<FeedbackRow>(
+    `SELECT * FROM feedback ${where} ORDER BY created_at DESC LIMIT ?`,
+    limit
+  ).map(mapFeedback);
+}
+
+export function setFeedbackHidden(id: number, hidden: boolean): boolean {
+  const result = run("UPDATE feedback SET hidden = ? WHERE id = ?", hidden ? 1 : 0, id);
+  return Number(result.changes) > 0;
+}
+
+export function adminDeleteFeedback(id: number): boolean {
+  const result = run("DELETE FROM feedback WHERE id = ?", id);
+  return Number(result.changes) > 0;
+}
+
+/** Medie e distribuzione dei pareri, calcolate sulle risposte non nascoste. */
+export function getFeedbackSummary(): FeedbackSummary {
+  const rows = all<{
+    role: string;
+    useful: number;
+    clarity: number;
+    trust: number;
+    recommend: string;
+  }>("SELECT role, rating_useful AS useful, rating_clarity AS clarity, rating_trust AS trust, recommend FROM feedback WHERE hidden = 0");
+
+  const total = rows.length;
+  const avg = (pick: (r: (typeof rows)[number]) => number): number => {
+    if (total === 0) return 0;
+    return Math.round((rows.reduce((sum, r) => sum + pick(r), 0) / total) * 10) / 10;
+  };
+
+  const roleCounts = new Map<string, number>();
+  for (const row of rows) {
+    roleCounts.set(row.role, (roleCounts.get(row.role) ?? 0) + 1);
+  }
+
+  return {
+    total,
+    averageUseful: avg((r) => r.useful),
+    averageClarity: avg((r) => r.clarity),
+    averageTrust: avg((r) => r.trust),
+    recommendSi: rows.filter((r) => r.recommend === "si").length,
+    recommendMaybe: rows.filter((r) => r.recommend === "forse").length,
+    recommendNo: rows.filter((r) => r.recommend === "no").length,
+    byRole: [...roleCounts.entries()]
+      .map(([role, count]) => ({
+        role: (role === "medico" || role === "farmacista" || role === "cittadino"
+          ? role
+          : "altro") as FeedbackRole,
+        count,
+      }))
+      .sort((a, b) => b.count - a.count),
+  };
+}
+
+/** Esporta i pareri in CSV (separatore ; così Excel italiano li apre bene). */
+export function feedbackToCsv(items: Feedback[]): string {
+  const esc = (value: unknown): string => {
+    const text = value === null || value === undefined ? "" : String(value);
+    return /[";\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const header = [
+    "id",
+    "data",
+    "ruolo",
+    "nome",
+    "email",
+    "citta",
+    "regione",
+    "utilita",
+    "chiarezza",
+    "fiducia",
+    "consiglierebbe",
+    "funzioni_usate",
+    "cosa_manca",
+    "commento",
+    "nascosto",
+  ];
+  const lines = [header.join(";")];
+  for (const f of items) {
+    lines.push(
+      [
+        f.id,
+        f.createdAt,
+        f.role,
+        f.name,
+        f.email,
+        f.city,
+        f.region,
+        f.ratingUseful,
+        f.ratingClarity,
+        f.ratingTrust,
+        f.recommend,
+        f.usedFeatures.join(" | "),
+        f.missing,
+        f.comment,
+        f.hidden ? "si" : "no",
+      ]
+        .map(esc)
+        .join(";")
+    );
+  }
+  return "\uFEFF" + lines.join("\r\n");
 }

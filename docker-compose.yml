@@ -1,0 +1,40 @@
+# Avvio del portale su un server o in locale, con dati persistenti.
+#
+#   cp .env.example .env      # poi compila i valori
+#   docker compose up -d --build
+#
+# Il database SQLite vive nel volume "fm-data": sopravvive a build e riavvii.
+
+services:
+  web:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+        NEXT_PUBLIC_CONTACT_EMAIL: ${NEXT_PUBLIC_CONTACT_EMAIL:-info@farmacomancante.it}
+    image: farmacomancante:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      NEXT_PUBLIC_CONTACT_EMAIL: ${NEXT_PUBLIC_CONTACT_EMAIL:-info@farmacomancante.it}
+      FARMACOMANCANTE_SECRET: ${FARMACOMANCANTE_SECRET:?imposta FARMACOMANCANTE_SECRET nel file .env}
+      FARMACOMANCANTE_ADMIN_EMAIL: ${FARMACOMANCANTE_ADMIN_EMAIL:-}
+      FARMACOMANCANTE_CRON_SECRET: ${FARMACOMANCANTE_CRON_SECRET:-}
+      FARMACOMANCANTE_SCHEDULER: ${FARMACOMANCANTE_SCHEDULER:-on}
+    volumes:
+      - fm-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  fm-data:

@@ -1,10 +1,13 @@
 import { findMdmMatch, listAllPharmacies } from "@/lib/db";
 import { formatDateIT } from "@/lib/format";
 import { VerifyPharmacyButton } from "@/components/admin/AdminButtons";
+import { requireAdminPage } from "@/lib/admin-guard";
 
 export const metadata = { title: "Farmacie · Admin" };
+export const dynamic = "force-dynamic";
 
-export default function AdminPharmaciesPage() {
+export default async function AdminPharmaciesPage() {
+  await requireAdminPage();
   const pharmacies = listAllPharmacies();
 
   return (

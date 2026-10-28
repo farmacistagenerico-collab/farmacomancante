@@ -18,6 +18,7 @@ export default async function AdminLayout({
     { href: "/admin", label: "Panoramica" },
     { href: "/admin/farmacie", label: "Farmacie" },
     { href: "/admin/segnalazioni", label: "Segnalazioni" },
+    { href: "/admin/pareri", label: "Pareri" },
     { href: "/admin/fonti", label: "Fonti e aggiornamenti" },
   ];
 

@@ -1,7 +1,12 @@
 import { cookies } from "next/headers";
 import { getPharmacyPasswordHash, getPharmacyById } from "@/lib/db";
 import { jsonError } from "@/lib/validation";
-import { createSessionToken, SESSION_COOKIE, verifyPassword } from "@/lib/auth";
+import {
+  createSessionToken,
+  SESSION_COOKIE,
+  sessionCookieOptions,
+  verifyPassword,
+} from "@/lib/auth";
 import { getClientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
@@ -30,12 +35,7 @@ export async function POST(request: Request) {
 
   const pharmacy = getPharmacyById(record.id);
   const store = await cookies();
-  store.set(SESSION_COOKIE, createSessionToken(record.id), {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 7 * 24 * 60 * 60,
-  });
+  store.set(SESSION_COOKIE, createSessionToken(record.id), sessionCookieOptions());
 
   return Response.json({ ok: true, pharmacy: { id: pharmacy?.id, name: pharmacy?.name } });
 }

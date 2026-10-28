@@ -6,8 +6,12 @@ import {
   listAllPharmacies,
 } from "@/lib/db";
 import { formatDateTimeIT } from "@/lib/format";
+import { requireAdminPage } from "@/lib/admin-guard";
 
-export default function AdminHomePage() {
+export const dynamic = "force-dynamic";
+
+export default async function AdminHomePage() {
+  await requireAdminPage();
   const stats = getStats();
   const sources = listSources();
   const recentReports = listAllReports({ show: "attivi", limit: 8 });

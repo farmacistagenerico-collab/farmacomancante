@@ -16,14 +16,20 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
-const DB_PATH = path.join(ROOT, "data", "farmacomancante.db");
-const DEFAULT_CSV = path.join(ROOT, "data", "raw", "elenco_medicinali_carenti.csv");
+const DATA_DIR = process.env.FARMACOMANCANTE_DATA_DIR
+  ? path.resolve(process.env.FARMACOMANCANTE_DATA_DIR)
+  : path.join(ROOT, "data");
+const DB_PATH = path.join(DATA_DIR, "farmacomancante.db");
+const DEFAULT_CSV = path.join(DATA_DIR, "raw", "elenco_medicinali_carenti.csv");
+const BUNDLED_CSV = path.join(ROOT, "assets", "elenco_medicinali_carenti.csv");
 const AIFA_CSV_URL =
   "https://www.aifa.gov.it/documents/20142/847339/elenco_medicinali_carenti.csv";
 const useRemote = process.argv.includes("--remote");
 const csvPath = process.argv[2] && !process.argv[2].startsWith("--")
   ? path.resolve(process.argv[2])
-  : DEFAULT_CSV;
+  : fs.existsSync(DEFAULT_CSV)
+    ? DEFAULT_CSV
+    : BUNDLED_CSV;
 
 function parseCsv(text, delimiter = ";") {
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);

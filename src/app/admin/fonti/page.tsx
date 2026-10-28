@@ -1,10 +1,13 @@
 import { listSources } from "@/lib/db";
 import { formatDateTimeIT } from "@/lib/format";
 import { ImportAifaButton } from "@/components/admin/AdminButtons";
+import { requireAdminPage } from "@/lib/admin-guard";
 
 export const metadata = { title: "Fonti · Admin" };
+export const dynamic = "force-dynamic";
 
-export default function AdminSourcesPage() {
+export default async function AdminSourcesPage() {
+  await requireAdminPage();
   const sources = listSources();
 
   return (

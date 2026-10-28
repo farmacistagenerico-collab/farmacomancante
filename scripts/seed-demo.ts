@@ -4,11 +4,13 @@
  * Idempotente: non ricrea le farmacie già presenti.
  */
 import {
+  createFeedback,
   createPharmacy,
   createShortageReport,
   ensureData,
   getDb,
   getPharmacyByEmail,
+  listFeedback,
   setPharmacyVerified,
   upsertAvailability,
 } from "../src/lib/db";
@@ -126,6 +128,40 @@ async function main() {
   });
 
   console.log("segnalazioni demo inserite");
+
+  // Pareri dimostrativi: mostrano la vista /admin/pareri già popolata.
+  if (listFeedback({ includeHidden: true }).length === 0) {
+    createFeedback({
+      role: "medico",
+      name: "Dott. Marco Rossi",
+      email: "marco.rossi@example.it",
+      city: "Brescia",
+      ratingUseful: 5,
+      ratingClarity: 4,
+      ratingTrust: 4,
+      recommend: "si",
+      usedFeatures: ["Ricerca farmaco", "Semaforo delle carenze"],
+      missing: "Un filtro per regione e un avviso via email quando un farmaco torna disponibile.",
+      comment:
+        "In studio mi fa risparmiare il giro di telefonate alle farmacie. La scheda con le indicazioni AIFA è la parte più utile.",
+    });
+    createFeedback({
+      role: "farmacista",
+      name: "Farmacia San Rocco",
+      city: "Desenzano del Garda",
+      ratingUseful: 4,
+      ratingClarity: 5,
+      ratingTrust: 3,
+      recommend: "forse",
+      usedFeatures: ["Disponibilità delle farmacie"],
+      missing: "L'incrocio automatico con il magazzino del grossista, per non dover inserire tutto a mano.",
+      comment:
+        "Utile ai cittadini, ma mi fido di più quando il dato arriva da un sistema collegato invece che a mano.",
+    });
+    console.log("pareri demo inseriti");
+  } else {
+    console.log("pareri già presenti, salto");
+  }
 }
 
 main().then(() => process.exit(0));

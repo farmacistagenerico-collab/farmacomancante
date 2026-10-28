@@ -25,7 +25,10 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
-const DB_PATH = path.join(ROOT, "data", "farmacomancante.db");
+const DATA_DIR = process.env.FARMACOMANCANTE_DATA_DIR
+  ? path.resolve(process.env.FARMACOMANCANTE_DATA_DIR)
+  : path.join(ROOT, "data");
+const DB_PATH = path.join(DATA_DIR, "farmacomancante.db");
 const SOURCE_CODE = "mdm-farmacie";
 
 const target = process.argv[2];

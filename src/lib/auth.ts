@@ -1,24 +1,65 @@
 import { cookies } from "next/headers";
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
-import path from "node:path";
 import { getDb, getPharmacyById } from "./db";
 import type { Pharmacy } from "./types";
+import { dataDir, isProduction, secretPath } from "./paths";
 
 export const SESSION_COOKIE = "fm_session";
 const SESSION_DAYS = 7;
-const DATA_DIR = path.join(process.cwd(), "data");
-const SECRET_PATH = path.join(DATA_DIR, "secret.key");
 
+/** True quando il segreto arriva dall'ambiente (raccomandato in produzione). */
+export function hasConfiguredSecret(): boolean {
+  return Boolean(process.env.FARMACOMANCANTE_SECRET?.trim());
+}
+
+let warnedAboutSecret = false;
+
+/**
+ * Segreto di firma delle sessioni. In produzione va impostato
+ * FARMACOMANCANTE_SECRET: senza di esso si usa un file su disco, che è
+ * accettabile solo con un volume persistente.
+ */
 function getSecret(): string {
-  if (process.env.FARMACOMANCANTE_SECRET) {
-    return process.env.FARMACOMANCANTE_SECRET;
+  const fromEnv = process.env.FARMACOMANCANTE_SECRET?.trim();
+  if (fromEnv) {
+    return fromEnv;
   }
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(SECRET_PATH)) {
-    fs.writeFileSync(SECRET_PATH, randomBytes(32).toString("hex"), { mode: 0o600 });
+  if (isProduction() && !warnedAboutSecret) {
+    warnedAboutSecret = true;
+    console.warn(
+      "[sicurezza] FARMACOMANCANTE_SECRET non impostato: uso un segreto su file. " +
+        "Impostalo nelle variabili d'ambiente per invalidare le sessioni al riavvio e per il deploy su più istanze."
+    );
   }
-  return fs.readFileSync(SECRET_PATH, "utf8").trim();
+  fs.mkdirSync(dataDir(), { recursive: true });
+  const secretFile = secretPath();
+  if (!fs.existsSync(secretFile)) {
+    fs.writeFileSync(secretFile, randomBytes(32).toString("hex"), { mode: 0o600 });
+  }
+  return fs.readFileSync(secretFile, "utf8").trim();
+}
+
+
+/** Opzioni del cookie di sessione, con flag Secure attivo in produzione (HTTPS). */
+export function sessionCookieOptions(): {
+  httpOnly: true;
+  sameSite: "lax";
+  path: string;
+  maxAge: number;
+  secure: boolean;
+} {
+  // Secure attivo in produzione (HTTPS). Su una preview servita in HTTP si può
+  // disattivare con FARMACOMANCANTE_INSECURE_COOKIES=1, altrimenti il browser
+  // scarterebbe il cookie e il login sembrerebbe non funzionare.
+  const secure = isProduction() && process.env.FARMACOMANCANTE_INSECURE_COOKIES !== "1";
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: SESSION_DAYS * 24 * 60 * 60,
+    secure,
+  };
 }
 
 /** Segreto condiviso per gli endpoint di manutenzione (es. cron). */

@@ -131,3 +131,52 @@ export interface ExternalSource {
   lastSyncAt: string | null;
   lastStatus: string | null;
 }
+
+// ---------- questionario di valutazione -----------------------------------
+
+export type FeedbackRole = "medico" | "farmacista" | "cittadino" | "altro";
+export type FeedbackRecommend = "si" | "forse" | "no";
+
+export interface Feedback {
+  id: number;
+  role: FeedbackRole;
+  name: string | null;
+  email: string | null;
+  city: string | null;
+  region: string | null;
+  ratingUseful: number;
+  ratingClarity: number;
+  ratingTrust: number;
+  recommend: FeedbackRecommend;
+  usedFeatures: string[];
+  missing: string | null;
+  comment: string | null;
+  hidden: number;
+  createdAt: string;
+}
+
+export interface NewFeedbackInput {
+  role: FeedbackRole;
+  name?: string | null;
+  email?: string | null;
+  city?: string | null;
+  region?: string | null;
+  ratingUseful: number;
+  ratingClarity: number;
+  ratingTrust: number;
+  recommend: FeedbackRecommend;
+  usedFeatures?: string[];
+  missing?: string | null;
+  comment?: string | null;
+}
+
+export interface FeedbackSummary {
+  total: number;
+  averageUseful: number;
+  averageClarity: number;
+  averageTrust: number;
+  recommendSi: number;
+  recommendMaybe: number;
+  recommendNo: number;
+  byRole: { role: FeedbackRole; count: number }[];
+}
