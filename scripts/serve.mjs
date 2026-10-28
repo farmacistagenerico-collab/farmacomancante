@@ -13,8 +13,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const root = process.cwd();
-const serverFile = path.join(root, ".next", "standalone", "server.js");
+// Radice del progetto: va letta PRIMA del chdir, perché serve a calcolare
+// il percorso dei dati.
+const projectRoot = process.cwd();
+const standaloneDir = path.join(projectRoot, ".next", "standalone");
+const serverFile = path.join(standaloneDir, "server.js");
 
 if (!fs.existsSync(serverFile)) {
   console.error(
@@ -30,7 +33,14 @@ process.env.NODE_ENV = "production";
 process.env.PORT = process.env.PORT ?? "3000";
 process.env.HOSTNAME = process.env.HOSTNAME ?? "0.0.0.0";
 
-// Il server.js generato da Next usa i percorsi relativi alla sua cartella.
-process.chdir(path.dirname(serverFile));
+// IMPORTANTE: il server standalone deve girare con cwd = sua cartella, ma il
+// database deve restare in <progetto>/data. Senza questa riga il chdir qui
+// sotto sposterebbe i dati in .next/standalone/data, creando un secondo
+// database vuoto e "sparendo" farmacie e segnalazioni.
+if (!process.env.FARMACOMANCANTE_DATA_DIR) {
+  process.env.FARMACOMANCANTE_DATA_DIR = path.join(projectRoot, "data");
+}
+console.log(`[start] database e segreti in ${process.env.FARMACOMANCANTE_DATA_DIR}`);
 
+process.chdir(standaloneDir);
 await import(serverFile);

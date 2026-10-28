@@ -24,6 +24,10 @@ Tre obiettivi:
 
 ## Funzionalità
 
+> Sintesi pronta da condividere con colleghi e collaboratori:
+> [`docs/cosa-sa-fare.md`](docs/cosa-sa-fare.md) — cosa fa il portale, per chi,
+> cosa fa da solo e quali limiti dichiara.
+
 ### Area pubblica
 
 - Home con ricerca immediata e statistiche sempre aggiornate
