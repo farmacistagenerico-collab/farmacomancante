@@ -1,0 +1,40 @@
+# Rilascio su Render (https://render.com) con un click.
+#
+# 1. crea un repository GitHub con questo codice;
+# 2. su Render: New > Blueprint, collega il repository;
+# 3. Render chiede i valori di FARMACOMANCANTE_SECRET, ADMIN_EMAIL e CRON_SECRET
+#    (generate con: openssl rand -hex 32).
+#
+# Il disco persistente richiede un piano a pagamento (il piano free non lo
+# supporta): senza disco il database viene ricreato a ogni deploy — la lista
+# AIFA si reimporta da sola, ma si perdono account delle farmacie e
+# segnalazioni. Per una spesa minima conviene docker-compose.yml su un VPS.
+
+services:
+  - type: web
+    name: farmacomancante
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: FARMACOMANCANTE_SECRET
+        generateValue: true
+      - key: FARMACOMANCANTE_CRON_SECRET
+        generateValue: true
+      - key: FARMACOMANCANTE_ADMIN_EMAIL
+        sync: false
+      # URL pubblico: letto a runtime, quindi impostabile dopo il primo deploy.
+      - key: FARMACOMANCANTE_SITE_URL
+        sync: false
+      - key: FARMACOMANCANTE_CONTACT_EMAIL
+        sync: false
+      - key: FARMACOMANCANTE_DATA_DIR
+        value: /data
+      - key: FARMACOMANCANTE_SCHEDULER
+        value: "on"
+    disk:
+      name: fm-data
+      mountPath: /data
+      sizeGB: 1

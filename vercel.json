@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/importa-aifa",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "name": "farmacomancante",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Portale pubblico sui farmaci carenti in Italia: lista AIFA, semaforo delle carenze, disponibilità segnalate dalle farmacie e questionario di valutazione.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build && node scripts/prepare-standalone.mjs",
+    "start": "node scripts/serve.mjs",
+    "import": "node scripts/import-csv.mjs",
+    "import:remote": "node scripts/import-csv.mjs --remote",
+    "import:farmacie-mdm": "node scripts/import-farmacie-mdm.mjs",
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "docker:build": "docker build -t farmacomancante .",
+    "docker:up": "docker compose up -d --build",
+    "docker:logs": "docker compose logs -f web",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "start:next": "next start -H 0.0.0.0 -p 3000"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "next": "^15.3.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.4",
+    "@types/leaflet": "^1.9.12",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tailwindcss": "^4.1.4",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": "> =22.5.0"
+  }
+}
